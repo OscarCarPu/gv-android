@@ -1,3 +1,6 @@
+# Local environment
+.env
+
 # Gradle files
 .gradle/
 build/

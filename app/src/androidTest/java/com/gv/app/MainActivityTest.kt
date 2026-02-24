@@ -12,9 +12,9 @@ class MainActivityTest {
     val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun mainScreen_showsHelloWorld() {
+    fun mainScreen_showsHabitsTitle() {
         composeTestRule
-            .onNodeWithText("Hello, World!")
+            .onNodeWithText("Habits")
             .assertIsDisplayed()
     }
 }

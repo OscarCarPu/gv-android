@@ -67,4 +67,4 @@ make hooks
 
 | File | Test | Description |
 |---|---|---|
-| `MainActivityTest.kt` | `mainScreen_showsHelloWorld` | Asserts the "Hello, World!" text is visible on launch |
+| `MainActivityTest.kt` | `mainScreen_showsHabitsTitle` | Asserts the "Habits" top-bar title is visible on launch |
