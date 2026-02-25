@@ -220,7 +220,9 @@ private fun HabitRow(
                             input.toDoubleOrNull()?.let { onSet(it) }
                             editing = false
                         }),
-                        modifier = Modifier.focusRequester(focusRequester)
+                        modifier = Modifier
+                            .focusRequester(focusRequester)
+                            .padding(end = 8.dp)
                     )
                     LaunchedEffect(Unit) { focusRequester.requestFocus() }
                 } else {
@@ -246,7 +248,7 @@ private fun HabitRow(
                     }
                 } else {
                     OutlinedButton(
-                        onClick = { editing = true },
+                        onClick = { input = ""; editing = true },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
                     ) {
                         Text("Set", style = MaterialTheme.typography.bodyLarge)
