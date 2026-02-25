@@ -55,12 +55,20 @@ import com.gv.app.domain.model.Habit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HabitsScreen(vm: HabitsViewModel = viewModel()) {
+fun HabitsScreen(
+    vm: HabitsViewModel = viewModel(),
+    openWizard: Boolean = false
+) {
     val uiState     by vm.uiState.collectAsStateWithLifecycle()
     val displayDate by vm.displayDate.collectAsStateWithLifecycle()
     val isToday     by vm.isToday.collectAsStateWithLifecycle()
 
     var wizardActive by remember { mutableStateOf(false) }
+
+    // Auto-open wizard when triggered by the daily notification tap
+    LaunchedEffect(openWizard) {
+        if (openWizard) wizardActive = true
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Habits") }) },

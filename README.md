@@ -14,17 +14,18 @@ Android interface for [gestor-vida](../gestor-vida) — a personal life manageme
 ```
 app/src/main/java/com/gv/app/
 ├── data/
-│   ├── api/        # Retrofit service interfaces
-│   └── local/      # Room database, DAOs, entities
+│   ├── api/          # Retrofit service interfaces
+│   └── local/        # Room database, DAOs, entities
 ├── domain/
-│   ├── model/      # Shared models: Habit, Task, Transaction
-│   └── usecase/    # Business logic, one class per use case
+│   ├── model/        # Shared models: Habit, Task, Transaction
+│   └── usecase/      # Business logic, one class per use case
+├── notification/     # Daily 11 AM reminder — AlarmManager, receivers, helper
 ├── ui/
-│   ├── components/ # Reusable Compose widgets
-│   ├── habits/     # Habit tracking screens
-│   ├── tasks/      # Task management screens
-│   └── finance/    # Finance screens (API-backed)
-└── MainActivity.kt # App entry point
+│   ├── components/   # Reusable Compose widgets
+│   ├── habits/       # Habit tracking screens
+│   ├── tasks/        # Task management screens
+│   └── finance/      # Finance screens (API-backed)
+└── MainActivity.kt   # App entry point
 ```
 
 ## Requirements
@@ -33,6 +34,25 @@ app/src/main/java/com/gv/app/
 - `ANDROID_HOME` pointing to the SDK root
 - ADB for device deployment
 
+## Release setup (one-time)
+
+Generate a keystore and create `keystore.properties` in the project root (both are gitignored):
+
+```bash
+keytool -genkeypair -v \
+  -keystore gv.jks \
+  -alias gv \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+```properties
+# keystore.properties
+storeFile=gv.jks
+storePassword=your-store-password
+keyAlias=gv
+keyPassword=your-key-password
+```
+
 ## Build
 
 ```bash
@@ -40,7 +60,7 @@ make build      # compile debug APK
 make run        # build + install + launch on connected device
 make log        # stream logcat filtered to this app
 make clean      # wipe build artifacts
-make release    # compile release APK
+make release    # compile and install release APK on connected device
 make uninstall  # remove app from device
 make devices    # list connected ADB devices
 ```
@@ -49,15 +69,16 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`
 
 ## Testing
 
-UI tests use the **Jetpack Compose test framework** with **kotlin-test** and run as instrumented tests directly on a connected device or emulator via ADB.
-
 ```bash
-make test       # run all instrumented tests on connected device
+make test            # instrumented tests on connected device
+./gradlew test       # unit tests (no device needed)
 ```
 
-Tests live in `app/src/androidTest/java/com/gv/app/`. Because they are instrumented, a device must be connected (`make devices` to verify) before running.
+Instrumented tests live in `app/src/androidTest/java/com/gv/app/`.
+Unit tests live in `app/src/test/java/com/gv/app/`.
 
-A pre-commit hook runs `make test` automatically on every commit. Hooks are tracked in `.githooks/` — activate them once after cloning:
+A pre-commit hook runs `make test` automatically on every commit. Hooks are tracked in
+`.githooks/` — activate them once after cloning:
 
 ```bash
 make hooks
@@ -65,6 +86,12 @@ make hooks
 
 ### Current tests
 
-| File | Test | Description |
-|---|---|---|
-| `MainActivityTest.kt` | `mainScreen_showsHabitsTitle` | Asserts the "Habits" top-bar title is visible on launch |
+| File | Test | Type |
+|------|------|------|
+| `MainActivityTest.kt` | `mainScreen_showsHabitsTitle` | Instrumented |
+| `NotificationSchedulerTest.kt` | 5 scheduling / timing tests | Unit |
+
+## Features
+
+- [Habits](docs/habits.md)
+- [Daily notification](docs/notifications.md)

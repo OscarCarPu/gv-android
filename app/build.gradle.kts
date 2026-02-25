@@ -11,6 +11,11 @@ val env = Properties().apply {
     if (envFile.exists()) load(envFile.inputStream())
 }
 
+val keystore = Properties().apply {
+    val ksFile = rootProject.file("keystore.properties")
+    if (ksFile.exists()) load(ksFile.inputStream())
+}
+
 android {
     namespace = "com.gv.app"
     compileSdk = 35
@@ -18,7 +23,7 @@ android {
 
     defaultConfig {
         applicationId = "com.gv.app"
-        minSdk = 24
+        minSdk = 35
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -26,9 +31,22 @@ android {
         buildConfigField("String", "BASE_URL", "\"${env.getProperty("BASE_URL", "http://gv-api.lab-ocp.com/")}\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile     = rootProject.file(keystore.getProperty("storeFile", "gv.jks"))
+            storePassword = keystore.getProperty("storePassword")
+            keyAlias      = keystore.getProperty("keyAlias")
+            keyPassword   = keystore.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

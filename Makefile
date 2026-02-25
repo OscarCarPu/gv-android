@@ -1,6 +1,7 @@
-APP_ID   := com.gv.app
-ACTIVITY := $(APP_ID)/.MainActivity
-APK_DEBUG := app/build/outputs/apk/debug/app-debug.apk
+APP_ID     := com.gv.app
+ACTIVITY   := $(APP_ID)/.MainActivity
+APK_DEBUG   := app/build/outputs/apk/debug/app-debug.apk
+APK_RELEASE := app/build/outputs/apk/release/app-release.apk
 
 .PHONY: build release install run clean uninstall log devices test hooks
 
@@ -12,9 +13,10 @@ hooks:
 build:
 	./gradlew assembleDebug
 
-## Build release APK
+## Build release APK and install on connected device
 release:
 	./gradlew assembleRelease
+	adb install -r $(APK_RELEASE)
 
 ## Build and install debug APK on connected device
 install: build
