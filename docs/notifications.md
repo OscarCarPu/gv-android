@@ -13,7 +13,7 @@ Set All wizard automatically.
 |------|---------------|
 | `NotificationHelper` | Creates the channel; posts the notification |
 | `NotificationScheduler` | Manages the `AlarmManager` alarm; guards against duplicates via SharedPreferences |
-| `NotificationReceiver` | Receives the 11 AM broadcast; posts notification and re-arms tomorrow's alarm |
+| `NotificationReceiver` | Receives the 11 PM broadcast; posts notification and re-arms tomorrow's alarm |
 | `BootReceiver` | Restores the alarm after device reboot |
 
 ---

@@ -63,13 +63,13 @@ class NotificationScheduler(
     }
 
     /**
-     * Returns the epoch-millisecond timestamp of the next 11:00:00 AM.
-     * If 11 AM has already passed today, returns tomorrow's 11 AM.
+     * Returns the epoch-millisecond timestamp of the next 11:00:00 PM.
+     * If 11 PM has already passed today, returns tomorrow's 11 PM
      * Marked `internal` so tests can call it directly.
      */
     internal fun nextElevenAm(): Long {
         val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 11)
+            set(Calendar.HOUR_OF_DAY, 23)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
