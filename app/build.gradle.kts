@@ -25,7 +25,7 @@ android {
         applicationId = "com.gv.app"
         minSdk = 35
         targetSdk = 35
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "BASE_URL", "\"${env.getProperty("BASE_URL", "http://gv-api.lab-ocp.com/")}\"")
