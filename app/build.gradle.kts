@@ -6,8 +6,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val env = Properties().apply {
+val envDev = Properties().apply {
     val envFile = rootProject.file(".env")
+    if (envFile.exists()) load(envFile.inputStream())
+}
+
+val envProd = Properties().apply {
+    val envFile = rootProject.file(".env.prod")
     if (envFile.exists()) load(envFile.inputStream())
 }
 
@@ -28,7 +33,6 @@ android {
         versionCode = 3
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "BASE_URL", "\"${env.getProperty("BASE_URL", "http://gv-api.lab-ocp.com/")}\"")
     }
 
     signingConfigs {
@@ -43,10 +47,12 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            buildConfigField("String", "BASE_URL", "\"${envDev.getProperty("BASE_URL")}\"")
         }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
+            buildConfigField("String", "BASE_URL", "\"${envProd.getProperty("BASE_URL")}\"")
         }
     }
 
