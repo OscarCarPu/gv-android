@@ -31,13 +31,13 @@ Device reboots → BootReceiver → re-arms alarm
 ## Testing without waiting until 11 AM
 
 ```bash
-# Trigger notification
+# Trigger notification (use .debug suffix for debug builds)
 adb shell am broadcast -a com.gv.app.ACTION_DAILY_ALARM \
-  -n com.gv.app/.notification.NotificationReceiver
+  -n com.gv.app.debug/.notification.NotificationReceiver
 
 # Simulate reboot
 adb shell am broadcast -a android.intent.action.BOOT_COMPLETED \
-  -n com.gv.app/.notification.BootReceiver
+  -n com.gv.app.debug/.notification.BootReceiver
 
 # Unit tests (no device needed)
 ./gradlew test

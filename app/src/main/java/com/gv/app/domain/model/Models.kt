@@ -14,3 +14,11 @@ data class LogRequest(
     val date: String,
     val value: Double
 )
+
+data class LoginRequest(val password: String)
+
+data class TwoFactorRequest(val token: String, val code: String)
+
+data class TokenResponse(val token: String)
+
+data class ErrorResponse(val error: String)

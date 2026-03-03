@@ -12,9 +12,9 @@ class MainActivityTest {
     val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun mainScreen_showsHabitsTitle() {
+    fun mainScreen_showsLoginWhenUnauthenticated() {
         composeTestRule
-            .onNodeWithText("Habits")
+            .onNodeWithText("Password")
             .assertIsDisplayed()
     }
 }

@@ -1,5 +1,6 @@
-APP_ID     := com.gv.app
-ACTIVITY   := $(APP_ID)/.MainActivity
+APP_ID       := com.gv.app
+APP_ID_DEBUG := $(APP_ID).debug
+ACTIVITY     := $(APP_ID_DEBUG)/.MainActivity
 APK_DEBUG   := app/build/outputs/apk/debug/app-debug.apk
 APK_RELEASE := app/build/outputs/apk/release/app-release.apk
 
@@ -24,11 +25,12 @@ install: build
 
 ## Build, install, and launch the app
 run: install
+	adb reverse tcp:8080 tcp:8080
 	adb shell am start -n $(ACTIVITY)
 
-## Uninstall the app from connected device
+## Uninstall debug app from connected device
 uninstall:
-	adb uninstall $(APP_ID)
+	adb uninstall $(APP_ID_DEBUG)
 
 ## Clean build artifacts
 clean:
@@ -44,4 +46,4 @@ test:
 
 ## Stream logcat filtered to this app (Ctrl+C to stop)
 log:
-	adb logcat --pid=$$(adb shell pidof -s $(APP_ID))
+	adb logcat --pid=$$(adb shell pidof -s $(APP_ID_DEBUG))

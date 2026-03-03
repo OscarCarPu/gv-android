@@ -17,9 +17,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gv.app.data.api.RetrofitClient
+import com.gv.app.data.local.TokenManager
 import com.gv.app.notification.NotificationHelper
 import com.gv.app.notification.NotificationScheduler
 import com.gv.app.ui.habits.HabitsScreen
+import com.gv.app.ui.login.LoginScreen
 
 private val GvColorScheme = darkColorScheme(
     primary      = Color(0xFF3B82F6),
@@ -41,8 +45,13 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
 
+    private lateinit var tokenManager: TokenManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        tokenManager = TokenManager(applicationContext)
+        RetrofitClient.tokenManager = tokenManager
 
         NotificationHelper.createChannel(this)
         NotificationScheduler(applicationContext).scheduleIfNotAlreadyScheduled()
@@ -55,9 +64,15 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
+            val token by tokenManager.tokenFlow.collectAsStateWithLifecycle()
+
             MaterialTheme(colorScheme = GvColorScheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    HabitsScreen(openWizard = openWizard)
+                    if (token != null) {
+                        HabitsScreen(openWizard = openWizard)
+                    } else {
+                        LoginScreen()
+                    }
                 }
             }
         }

@@ -3,7 +3,9 @@ package com.gv.app.notification
 import android.app.AlarmManager
 import android.content.Context
 import android.content.SharedPreferences
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.justRun
 import io.mockk.mockk
 import io.mockk.slot
@@ -33,7 +35,7 @@ class NotificationSchedulerTest {
         every { context.applicationContext } returns context
         every { prefs.edit() } returns prefsEditor
         every { prefsEditor.putBoolean(any(), any()) } returns prefsEditor
-        every { prefsEditor.apply() } justRuns
+        every { prefsEditor.apply() } just Runs
         every { alarmManager.canScheduleExactAlarms() } returns true
 
         scheduler = NotificationScheduler(context, alarmManager)
