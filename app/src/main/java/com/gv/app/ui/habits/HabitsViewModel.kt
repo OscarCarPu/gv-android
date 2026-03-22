@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gv.app.data.api.ApiService
 import com.gv.app.data.api.RetrofitClient
+import com.gv.app.domain.model.CreateHabitRequest
 import com.gv.app.domain.model.Habit
 import com.gv.app.domain.model.LogRequest
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,9 @@ class HabitsViewModel(
     private val _uiState = MutableStateFlow<HabitsUiState>(HabitsUiState.Loading)
     val uiState: StateFlow<HabitsUiState> = _uiState
 
+    private val _showCreateSheet = MutableStateFlow(false)
+    val showCreateSheet: StateFlow<Boolean> = _showCreateSheet
+
     init {
         loadHabits()
     }
@@ -51,7 +55,7 @@ class HabitsViewModel(
                 val habits = api.getHabits(_dateStr.value)
                 _uiState.value = HabitsUiState.Success(habits)
             } catch (e: Exception) {
-                _uiState.value = HabitsUiState.Error(e.message ?: "Unknown error")
+                _uiState.value = HabitsUiState.Error(e.message ?: "Error desconocido")
             }
         }
     }
@@ -107,6 +111,37 @@ class HabitsViewModel(
                 api.logHabit(LogRequest(habit.id, _dateStr.value, value))
                 api.getHabits(_dateStr.value).let { _uiState.value = HabitsUiState.Success(it) }
             } catch (e: Exception) {
+                loadHabits()
+            }
+        }
+    }
+
+    fun showCreateSheet() {
+        _showCreateSheet.value = true
+    }
+
+    fun dismissCreateSheet() {
+        _showCreateSheet.value = false
+    }
+
+    fun createHabit(request: CreateHabitRequest) {
+        viewModelScope.launch {
+            try {
+                api.createHabit(request)
+                _showCreateSheet.value = false
+                loadHabits()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun deleteHabit(habitId: Int) {
+        // Optimistic remove
+        val s = _uiState.value as? HabitsUiState.Success ?: return
+        _uiState.value = s.copy(habits = s.habits.filter { it.id != habitId })
+        viewModelScope.launch {
+            try {
+                api.deleteHabit(habitId)
+            } catch (_: Exception) {
                 loadHabits()
             }
         }

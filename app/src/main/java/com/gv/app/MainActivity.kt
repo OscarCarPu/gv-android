@@ -22,16 +22,25 @@ import com.gv.app.data.api.RetrofitClient
 import com.gv.app.data.local.TokenManager
 import com.gv.app.notification.NotificationHelper
 import com.gv.app.notification.NotificationScheduler
-import com.gv.app.ui.habits.HabitsScreen
 import com.gv.app.ui.login.LoginScreen
+import com.gv.app.ui.navigation.AppScaffold
 
 private val GvColorScheme = darkColorScheme(
     primary      = Color(0xFF3B82F6),
+    secondary    = Color(0xFF8B5CF6),
     surface      = Color(0xFF1E293B),
     background   = Color(0xFF0F172A),
     onSurface    = Color(0xFFF1F5F9),
     onBackground = Color(0xFFF1F5F9),
 )
+
+object AppColors {
+    val success   = Color(0xFF22C55E)
+    val warning   = Color(0xFFEAB308)
+    val danger    = Color(0xFFEF4444)
+    val muted     = Color(0xFF94A3B8)
+    val secondary = Color(0xFF8B5CF6)
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -69,7 +78,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = GvColorScheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     if (token != null) {
-                        HabitsScreen(openWizard = openWizard)
+                        AppScaffold(openWizard = openWizard)
                     } else {
                         LoginScreen()
                     }

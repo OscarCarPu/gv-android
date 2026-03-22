@@ -95,3 +95,7 @@ make hooks
 
 - [Habits](docs/habits.md)
 - [Daily notification](docs/notifications.md)
+
+---
+
+Built with [Claude Code](https://claude.ai/claude-code)

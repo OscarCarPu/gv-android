@@ -6,20 +6,23 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val envDev = Properties().apply {
-    val envFile = rootProject.file(".env")
-    if (envFile.exists()) load(envFile.inputStream())
-}
+val envDev =
+    Properties().apply {
+        val envFile = rootProject.file(".env")
+        if (envFile.exists()) load(envFile.inputStream())
+    }
 
-val envProd = Properties().apply {
-    val envFile = rootProject.file(".env.prod")
-    if (envFile.exists()) load(envFile.inputStream())
-}
+val envProd =
+    Properties().apply {
+        val envFile = rootProject.file(".env.prod")
+        if (envFile.exists()) load(envFile.inputStream())
+    }
 
-val keystore = Properties().apply {
-    val ksFile = rootProject.file("keystore.properties")
-    if (ksFile.exists()) load(ksFile.inputStream())
-}
+val keystore =
+    Properties().apply {
+        val ksFile = rootProject.file("keystore.properties")
+        if (ksFile.exists()) load(ksFile.inputStream())
+    }
 
 android {
     namespace = "com.gv.app"
@@ -30,17 +33,17 @@ android {
         applicationId = "com.gv.app"
         minSdk = 35
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         create("release") {
-            storeFile     = rootProject.file(keystore.getProperty("storeFile", "gv.jks"))
+            storeFile = rootProject.file(keystore.getProperty("storeFile", "gv.jks"))
             storePassword = keystore.getProperty("storePassword")
-            keyAlias      = keystore.getProperty("keyAlias")
-            keyPassword   = keystore.getProperty("keyPassword")
+            keyAlias = keystore.getProperty("keyAlias")
+            keyPassword = keystore.getProperty("keyPassword")
         }
     }
 
@@ -102,4 +105,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.compose.material:material-icons-extended")
 }
