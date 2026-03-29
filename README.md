@@ -96,6 +96,6 @@ make hooks
 - [Habits](docs/habits.md)
 - [Daily notification](docs/notifications.md)
 
----
+## Development Approach
 
-Built with [Claude Code](https://claude.ai/claude-code)
+The foundation of this project — the structure, basic patterns, and integrations — was built manually. After that, all visual design and code is done by [Claude Code](https://claude.com/claude-code).
