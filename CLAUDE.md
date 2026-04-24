@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GV-Android is the Android client for gestor-vida, a personal life management system for tracking habits, tasks, and finances. It's a single-module Kotlin app using Jetpack Compose, targeting SDK 35.
+GV-Android is the Android client for gestor-vida. The app is currently a **skeleton**: auth (login + 2FA) wired through to an empty "Home" placeholder. Feature screens (habits, tasks, finance) have been removed; they will be rebuilt on top of this skeleton. Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
 
 ## Build & Development Commands
 
@@ -13,7 +13,7 @@ All common operations are available via Makefile:
 ```bash
 make build          # assembleDebug
 make run            # build + install + adb reverse tcp:8080 + launch
-make release        # assembleRelease + install release APK
+make release        # bumps versionCode in version.properties, assembleRelease, installs
 make install        # build + adb install debug APK
 make test           # ./gradlew connectedDebugAndroidTest (instrumented, requires device/emulator)
 make clean          # ./gradlew clean
@@ -28,36 +28,35 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 - `.env` — dev BASE_URL (http://localhost:8080/), used by debug builds
 - `.env.prod` — production BASE_URL, used by release builds
 - `keystore.properties` + `gv.jks` — release signing config (both gitignored)
+- `version.properties` — tracked file holding `versionCode` / `versionName`. `make release` increments `versionCode` before building so each release APK replaces the previous install.
 - BASE_URL is injected at build time via `buildConfigField`, not at runtime
 
 ## Architecture
 
 **MVVM + Clean Architecture layers** under package `com.gv.app`:
 
-- **data/api/** — `ApiService` (Retrofit interface, 30+ suspend endpoints), `RetrofitClient` (singleton with OkHttp auth interceptor)
+- **data/api/** — `ApiService` (Retrofit interface, 2 auth endpoints: `login`, `login2fa`), `RetrofitClient` (singleton with OkHttp auth interceptor)
 - **data/local/** — `TokenManager` (SharedPreferences-based JWT storage exposing `StateFlow<String?>`)
-- **domain/model/** — Data classes for all entities (Habit, Task, Project, Todo, TimeEntry, etc.)
-- **domain/usecase/** — Stub (not yet implemented)
-- **ui/** — Compose screens organized by feature: `login/`, `habits/`, `tasks/`, `finance/`, `navigation/`, `components/`
-- **notification/** — AlarmManager-based daily reminder system (11 PM) with boot receiver
+- **domain/model/** — Auth data classes only (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`)
+- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `navigation/` (`AppNavigation.kt` — Login → Home NavHost with inline `HomeScreen` placeholder)
+- **notification/** — Skeleton only: `NotificationHelper`, `NotificationScheduler`, `NotificationReceiver`. No alarm is scheduled at startup; the classes and manifest receiver entry are retained so a future feature can reactivate by calling `NotificationHelper.createChannel()` + `NotificationScheduler(ctx).scheduleDailyAlarm()`. Boot-time re-arming is not wired up — if a future alarm needs to survive reboot, re-add a `BootReceiver`.
 
 **Key patterns:**
-- **Auth routing**: `TokenManager.tokenFlow` drives login vs main screen display in MainActivity
-- **Optimistic updates**: Habits and Todos update UI immediately, revert on API error
-- **Activity-scoped TimerViewModel**: Shared across tab screens (Tasks/Habits)
+- **Auth routing**: `TokenManager.tokenFlow` drives navigation inside `AppNavigation`. On token change, the NavHost navigates between `login` and `home` routes.
 - **OkHttp interceptor**: Auto-injects Bearer token, clears token on 401 (triggers logout)
-- **Two-step login**: Password → TOTP 2FA, managed by LoginViewModel state machine
+- **Two-step login**: Password → TOTP 2FA, managed by `LoginViewModel` state machine
 
 ## Testing
 
-- **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test
-- **Unit tests**: `app/src/test/java/`
-- **Instrumented tests**: `app/src/androidTest/java/`
-- Notification testing via adb: `adb shell am broadcast -a com.gv.app.ACTION_DAILY_ALARM -n com.gv.app.debug/com.gv.app.notification.NotificationReceiver`
+- **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test (wired in Gradle; no tests currently exist under `app/src/test/` or `app/src/androidTest/`)
 
 ## Navigation
 
-Bottom tab navigation between Tasks and Habits screens, defined in `ui/navigation/AppNavigation.kt`. Notification tap opens the Habits "Set All" wizard via intent extra `EXTRA_OPEN_WIZARD`.
+Two routes only: `login` → `home`, defined inline in `ui/navigation/AppNavigation.kt`. `HomeScreen` is a centered "Home" placeholder composable.
+
+## Visual style
+
+`docs/UI_STYLE_GUIDE.md` extracts the dark-theme visual tokens (color palette, typography scale, spacing, shape/elevation, motion, state deltas) from the sibling `gv-web` project. Consult it before building any new feature UI — it is the authoritative source for color/typography/spacing decisions on Android.
 
 ## Custom Theme
 

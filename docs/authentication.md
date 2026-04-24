@@ -3,8 +3,8 @@
 Source: `app/src/main/java/com/gv/app/ui/login/`, `app/src/main/java/com/gv/app/data/local/TokenManager.kt`
 
 Two-step JWT authentication (password + TOTP 2FA) matching the gv-api backend.
-The app shows the login screen when no token is stored and redirects to the
-habits screen after successful authentication.
+The app shows the login screen when no token is stored and navigates to the
+home placeholder after successful authentication.
 
 ---
 
@@ -28,7 +28,8 @@ Protected requests:  Authorization: Bearer <full-token>
 | `data/api/RetrofitClient.kt` | OkHttp interceptor that injects `Authorization: Bearer` header and clears token on 401 |
 | `ui/login/LoginViewModel.kt` | Drives the two-step login state machine |
 | `ui/login/LoginScreen.kt` | Password form and 6-digit TOTP form composables |
-| `MainActivity.kt` | Initializes `TokenManager`, observes `tokenFlow`, routes between `LoginScreen` and `HabitsScreen` |
+| `ui/navigation/AppNavigation.kt` | NavHost with `login` + `home` routes. Observes `tokenFlow` and navigates between them on token changes. |
+| `MainActivity.kt` | Initializes `TokenManager` + `RetrofitClient`, mounts `AppNavigation` |
 
 ---
 
@@ -38,7 +39,7 @@ Protected requests:  Authorization: Bearer <full-token>
 
 - `saveToken(token)` — persists and updates `tokenFlow`
 - `clearToken()` — removes token and updates `tokenFlow`
-- `tokenFlow` — seeded from persisted value on construction; drives the screen switch in `MainActivity`
+- `tokenFlow` — seeded from persisted value on construction; drives navigation inside `AppNavigation`
 
 The auth interceptor in `RetrofitClient` automatically:
 - Adds `Authorization: Bearer <token>` to all requests except `/login` and `/login/2fa`
@@ -52,7 +53,7 @@ The auth interceptor in `RetrofitClient` automatically:
 Idle ──submitPassword──→ Loading ──success──→ AwaitingTwoFactor
                                   ──error───→ Error
 
-AwaitingTwoFactor ──submitTwoFactorCode──→ Loading ──success──→ Success (token saved, UI switches)
+AwaitingTwoFactor ──submitTwoFactorCode──→ Loading ──success──→ Success (token saved, NavHost navigates to home)
                                                    ──error───→ AwaitingTwoFactor (with errorMessage, temp token preserved)
 ```
 
@@ -62,14 +63,14 @@ AwaitingTwoFactor ──submitTwoFactorCode──→ Loading ──success──
 | `Loading` | Spinner |
 | `Error(message)` | Error text + password form for retry |
 | `AwaitingTwoFactor(tempToken, errorMessage?)` | 6-digit numeric input (auto-focused) + Verify button + optional inline error |
-| `Success` | No-op; `MainActivity` observes `tokenFlow` and switches to `HabitsScreen` |
+| `Success` | No-op inside `LoginScreen`; `AppNavigation` observes `tokenFlow` and navigates to `home` |
 
 ---
 
 ## Token persistence
 
-- Kill and reopen the app → goes directly to `HabitsScreen` if a token is stored
-- Token expiry → backend returns 401 → interceptor clears token → `tokenFlow` emits null → `LoginScreen` shown
+- Kill and reopen the app → starts directly on `home` if a token is stored
+- Token expiry → backend returns 401 → interceptor clears token → `tokenFlow` emits null → `AppNavigation` navigates back to `login`
 
 ---
 
@@ -87,16 +88,4 @@ so the phone's `localhost:8080` routes to the dev machine's Docker API.
 
 ## Testing
 
-```bash
-# Unit tests (no device needed)
-./gradlew testDebugUnitTest --tests "com.gv.app.ui.login.LoginViewModelTest"
-
-# Instrumented test (device required)
-./gradlew connectedDebugAndroidTest
-```
-
-The `LoginViewModelTest` covers:
-- Password submit success / HTTP error / network error
-- 2FA submit success / error (preserves temp token) / no-op when not in correct state
-- Correct request payloads via `slot<T>()`
-- `clearError` behavior for both password and 2FA steps
+No tests currently exist for the login flow. The harness (JUnit 4 + MockK + Coroutines Test + Compose UI Test) is wired in Gradle, so tests can be added under `app/src/test/java/com/gv/app/ui/login/` or `app/src/androidTest/java/com/gv/app/`.

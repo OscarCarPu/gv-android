@@ -14,8 +14,12 @@ hooks:
 build:
 	./gradlew assembleDebug
 
-## Build release APK and install on connected device
+## Build release APK and install on connected device.
+## Auto-bumps versionCode in version.properties so the APK replaces any prior install.
 release:
+	@NEW=$$(awk -F= '/^versionCode=/ { print $$2+1; exit }' version.properties) && \
+	 sed -i "s/^versionCode=.*/versionCode=$$NEW/" version.properties && \
+	 echo "versionCode → $$NEW"
 	./gradlew assembleRelease
 	adb install -r $(APK_RELEASE)
 

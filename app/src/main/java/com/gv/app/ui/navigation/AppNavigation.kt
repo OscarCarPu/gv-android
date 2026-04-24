@@ -1,92 +1,53 @@
 package com.gv.app.ui.navigation
 
-import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.gv.app.ui.habits.HabitsScreen
-import com.gv.app.ui.tasks.TasksScreen
-import com.gv.app.ui.tasks.TimerViewModel
+import com.gv.app.data.api.RetrofitClient
+import com.gv.app.ui.login.LoginScreen
 
-sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    data object Tasks : Screen("tareas", "Tareas", Icons.Filled.CheckCircle)
-    data object Habits : Screen("habitos", "Hábitos", Icons.Filled.FavoriteBorder)
+private object Routes {
+    const val LOGIN = "login"
+    const val HOME = "home"
 }
 
-private val screens = listOf(Screen.Tasks, Screen.Habits)
-
 @Composable
-fun AppScaffold(openWizard: Boolean = false) {
+fun AppNavigation() {
+    val tokenManager = RetrofitClient.tokenManager
+    val token by tokenManager.tokenFlow.collectAsStateWithLifecycle()
     val navController = rememberNavController()
-    val activity = LocalContext.current as ComponentActivity
-    val timerVm: TimerViewModel = viewModel(viewModelStoreOwner = activity)
+    val start = remember { if (tokenManager.tokenFlow.value != null) Routes.HOME else Routes.LOGIN }
 
-    LaunchedEffect(openWizard) {
-        if (openWizard) {
-            navController.navigate(Screen.Habits.route) {
-                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+    LaunchedEffect(token) {
+        val target = if (token != null) Routes.HOME else Routes.LOGIN
+        val current = navController.currentDestination?.route
+        if (current != null && current != target) {
+            navController.navigate(target) {
+                popUpTo(0) { inclusive = true }
                 launchSingleTop = true
-                restoreState = true
             }
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            val navBackStackEntry by navController.currentBackStackEntryAsState()
-            val currentDestination = navBackStackEntry?.destination
-            NavigationBar {
-                screens.forEach { screen ->
-                    NavigationBarItem(
-                        icon = { Icon(screen.icon, contentDescription = screen.label) },
-                        label = { Text(screen.label) },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    )
-                }
-            }
-        }
-    ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Tasks.route,
-            modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
-        ) {
-            composable(Screen.Tasks.route) {
-                TasksScreen(timerVm = timerVm)
-            }
-            composable(Screen.Habits.route) {
-                HabitsScreen(openWizard = openWizard)
-            }
-        }
+    NavHost(navController = navController, startDestination = start) {
+        composable(Routes.LOGIN) { LoginScreen() }
+        composable(Routes.HOME) { HomeScreen() }
+    }
+}
+
+@Composable
+private fun HomeScreen() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("Home")
     }
 }

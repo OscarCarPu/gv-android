@@ -1,44 +1,33 @@
-# Daily Habit Reminder Notification
+# Notification Skeleton
 
 Source: `app/src/main/java/com/gv/app/notification/`
 
-Fires a daily notification at **11 AM**. Tapping it opens the app and launches the
-Set All wizard automatically.
+No alarm or notification is active in the current build. The classes below are kept as scaffolding so a future feature can wire a scheduled notification without reintroducing the plumbing from scratch.
 
 ---
 
-## Components
+## What's in place
 
 | File | Responsibility |
 |------|---------------|
-| `NotificationHelper` | Creates the channel; posts the notification |
-| `NotificationScheduler` | Manages the `AlarmManager` alarm; guards against duplicates via SharedPreferences |
-| `NotificationReceiver` | Receives the 11 PM broadcast; posts notification and re-arms tomorrow's alarm |
-| `BootReceiver` | Restores the alarm after device reboot |
+| `NotificationHelper` | Channel creation + `showDailyNotification` (posts to `MainActivity`). Not called at startup. |
+| `NotificationScheduler` | Builds `AlarmManager` alarms via `scheduleDailyAlarm()` / `scheduleIfNotAlreadyScheduled()`. Not invoked anywhere at runtime. |
+| `NotificationReceiver` | Explicit-component `BroadcastReceiver`. Wired in `AndroidManifest.xml` (`exported="false"`). Only fires if something schedules an alarm pointing at it. |
+
+Permissions retained in `AndroidManifest.xml`: `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM`.
 
 ---
 
-## Flow
+## Reactivating a scheduled notification
 
+To re-enable a daily notification, add back to `MainActivity.onCreate` (in the right order):
+
+```kotlin
+NotificationHelper.createChannel(this)
+NotificationScheduler(applicationContext).scheduleIfNotAlreadyScheduled()
+// Also request POST_NOTIFICATIONS at runtime before posting.
 ```
-AlarmManager fires → NotificationReceiver → shows notification + reschedules tomorrow
-User taps notification → MainActivity reads EXTRA_OPEN_WIZARD → SetWizardDialog opens
-Device reboots → BootReceiver → re-arms alarm
-```
 
----
+Tune `NotificationScheduler.nextElevenAm()` if a different trigger time is needed, and update `NotificationHelper.showDailyNotification()` content + intent extras to fit the new feature.
 
-## Testing without waiting until 11 AM
-
-```bash
-# Trigger notification (use .debug suffix for debug builds)
-adb shell am broadcast -a com.gv.app.ACTION_DAILY_ALARM \
-  -n com.gv.app.debug/.notification.NotificationReceiver
-
-# Simulate reboot
-adb shell am broadcast -a android.intent.action.BOOT_COMPLETED \
-  -n com.gv.app.debug/.notification.BootReceiver
-
-# Unit tests (no device needed)
-./gradlew test
-```
+For boot-survival, re-add a `BootReceiver` class + `<receiver>` manifest entry + the `RECEIVE_BOOT_COMPLETED` permission. The previous BootReceiver just called `scheduleDailyAlarm()` on `BOOT_COMPLETED`.

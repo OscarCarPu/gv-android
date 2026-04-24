@@ -24,6 +24,12 @@ val keystore =
         if (ksFile.exists()) load(ksFile.inputStream())
     }
 
+val version =
+    Properties().apply {
+        val f = rootProject.file("version.properties")
+        if (f.exists()) load(f.inputStream())
+    }
+
 android {
     namespace = "com.gv.app"
     compileSdk = 35
@@ -33,8 +39,8 @@ android {
         applicationId = "com.gv.app"
         minSdk = 35
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.1"
+        versionCode = version.getProperty("versionCode", "1").toInt()
+        versionName = version.getProperty("versionName", "1.0")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
