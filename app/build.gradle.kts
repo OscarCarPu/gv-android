@@ -57,11 +57,17 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             buildConfigField("String", "BASE_URL", "\"${envDev.getProperty("BASE_URL")}\"")
+            buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${envDev.getProperty("SPOTIFY_CLIENT_ID", "")}\"")
+            buildConfigField("String", "SPOTIFY_CLIENT_SECRET", "\"${envDev.getProperty("SPOTIFY_CLIENT_SECRET", "")}\"")
+            buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"${envDev.getProperty("SPOTIFY_REDIRECT_URI", "")}\"")
         }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "BASE_URL", "\"${envProd.getProperty("BASE_URL")}\"")
+            buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${envProd.getProperty("SPOTIFY_CLIENT_ID", "")}\"")
+            buildConfigField("String", "SPOTIFY_CLIENT_SECRET", "\"${envProd.getProperty("SPOTIFY_CLIENT_SECRET", "")}\"")
+            buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"${envProd.getProperty("SPOTIFY_REDIRECT_URI", "")}\"")
         }
     }
 
@@ -81,6 +87,8 @@ android {
 }
 
 dependencies {
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
+
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
 

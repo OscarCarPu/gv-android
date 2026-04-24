@@ -21,6 +21,10 @@ captures/
 *.apk
 output-metadata.json
 
+# Vendored third-party Android libraries (download separately)
+app/libs/*.aar
+app/libs/*.jar
+
 # IntelliJ
 *.iml
 .idea/

@@ -1,19 +1,15 @@
 package com.gv.app.ui.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.gv.app.data.api.RetrofitClient
+import com.gv.app.ui.alarm.AlarmScreen
 import com.gv.app.ui.login.LoginScreen
 
 private object Routes {
@@ -41,13 +37,6 @@ fun AppNavigation() {
 
     NavHost(navController = navController, startDestination = start) {
         composable(Routes.LOGIN) { LoginScreen() }
-        composable(Routes.HOME) { HomeScreen() }
-    }
-}
-
-@Composable
-private fun HomeScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Home")
+        composable(Routes.HOME) { AlarmScreen() }
     }
 }
