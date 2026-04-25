@@ -127,8 +127,8 @@ class SpotifyAlarm : Service() {
         private const val CHANNEL_ID = "gv_alarm"
         private const val NOTIFICATION_ID = 2001
         private const val START_PERCENT = 1
-        private const val END_PERCENT = 100
+        private const val END_PERCENT = 70
         private const val STEP_PERCENT = 1
-        private const val STEP_INTERVAL_MS = 3_000L
+        private const val STEP_INTERVAL_MS = 5_000L
     }
 }
