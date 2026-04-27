@@ -28,9 +28,22 @@
         <receiver android:name=".alarm.AlarmTriggerReceiver" android:exported="false" />
 
         <service
-            android:name=".alarm.SpotifyAlarm"
+            android:name=".spotify.SpotifyAlarm"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
+
+        <activity
+            android:name=".spotify.SpotifyAuthCallbackActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.gv.app" android:host="spotify-callback" />
+            </intent-filter>
+        </activity>
 
     </application>
 

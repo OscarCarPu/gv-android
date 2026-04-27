@@ -43,7 +43,8 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
    - Release: `keytool -list -v -keystore gv.jks -alias <alias>`
 4. **User Management**: while the app is in Development Mode, the Spotify account used for testing must be explicitly listed here or auth will silently fail.
 5. Download `spotify-app-remote-release-X.Y.Z.aar` from github.com/spotify/android-sdk/releases and drop into `app/libs/`. The fileTree dependency in `app/build.gradle.kts` picks it up automatically.
-6. Fill `SPOTIFY_CLIENT_ID` (and optionally `SPOTIFY_CLIENT_SECRET`, unused by App Remote but plumbed for future Web-API flows) into `.env` / `.env.prod`.
+6. Fill `SPOTIFY_CLIENT_ID` and `SPOTIFY_REDIRECT_URI` (`com.gv.app://spotify-callback`) into `.env` / `.env.prod`. **`SPOTIFY_CLIENT_SECRET` is unused** — the playlist picker uses OAuth PKCE, which intentionally requires no client secret. The field is still plumbed in `build.gradle.kts` for backwards compatibility.
+7. The Web API picker requires scopes `playlist-read-private` and `playlist-read-collaborative`, requested at login time by `SpotifyAuth.startLogin`.
 
 ## Architecture
 
@@ -52,7 +53,8 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 - **data/api/** — `ApiService` (Retrofit interface, 2 auth endpoints: `login`, `login2fa`), `RetrofitClient` (singleton with OkHttp auth interceptor).
 - **data/local/** — `TokenManager` (SharedPreferences-based JWT storage exposing `StateFlow<String?>`).
 - **domain/model/** — Auth data classes only (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`).
-- **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day), `SpotifyAlarm` (see below).
+- **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled + selected playlist URI/name/imageUrl), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day).
+- **spotify/** — All Spotify integration in a single file `Spotify.kt`: `SpotifyAlarm` foreground Service, `SpotifyAuth` (PKCE OAuth state machine + token refresh), `SpotifyAuthCallbackActivity` (catches the `com.gv.app://spotify-callback` redirect), Retrofit Web API client, and the public `Spotify` entry point (`Spotify.state`, `Spotify.startLogin`, `Spotify.listMyPlaylists`).
 - **notification/** — Legacy skeleton (`NotificationHelper`, `NotificationScheduler`, `NotificationReceiver`) currently unused by any active feature. Retained only because the manifest receiver entry is still present; scheduled for removal.
 - **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four tabs; only the Alarm tab is enabled and renders `AlarmScreen`, the others are disabled placeholders), `alarm/` (AlarmScreen + AlarmViewModel), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
 
@@ -61,13 +63,14 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 - **OkHttp interceptor**: Auto-injects Bearer token, clears token on 401 (triggers logout).
 - **Two-step login**: Password → TOTP 2FA, managed by `LoginViewModel` state machine.
 - **Autosave alarm config**: Both the time picker and the enabled switch in `AlarmScreen` write to `AlarmPreferences` on every change — no save button. Toggling enabled also schedules/cancels the alarm via `AlarmScheduler`.
-- **Single file per external integration**: `SpotifyAlarm.kt` is the *only* file that imports `com.spotify.*`. Callers outside that file do not reference Spotify types — they invoke the service via `startForegroundService(Intent(ctx, SpotifyAlarm::class.java))`. Apply the same rule to future SDKs (Slack, OAuth providers, etc.).
+- **Single file per external integration**: `spotify/Spotify.kt` is the *only* file that imports `com.spotify.*` or talks to `accounts.spotify.com` / `api.spotify.com`. UI callers go through the public `Spotify` object (`Spotify.state`, `Spotify.startLogin(activity)`, `Spotify.listMyPlaylists()`); the alarm trigger goes through `startForegroundService(Intent(ctx, SpotifyAlarm::class.java))`. Apply the same rule to future SDKs (Slack, OAuth providers, etc.).
 
 ### Alarm feature
 
 - One daily alarm. Time (hour + minute) and enabled flag are persisted in `gv_alarm` SharedPreferences.
 - When enabled, `AlarmScheduler` arms an exact wake-up alarm at the next occurrence of that time. On fire, `AlarmTriggerReceiver` starts `SpotifyAlarm` as a foreground service and re-schedules for the next day (AlarmManager exact alarms don't auto-repeat).
-- `SpotifyAlarm` is a `foregroundServiceType=mediaPlayback` Service. On start it: posts a silent low-priority "Alarm" notification (required on Android 14+), connects to Spotify App Remote with the build-time client id + redirect URI, plays the hardcoded "Boom Boom" playlist URI, and ramps `AudioManager.STREAM_MUSIC` volume from 1% to 70% in +1 steps every 5s (≈ 6 minutes), then disconnects and stops itself.
+- `SpotifyAlarm` is a `foregroundServiceType=mediaPlayback` Service. On start it: reads the configured playlist URI from `AlarmPreferences`, posts a silent low-priority notification, connects to Spotify App Remote with the build-time client id + redirect URI, plays that playlist URI, and ramps `AudioManager.STREAM_MUSIC` volume from 1% to 70% in +1 steps every 5s (≈ 6 minutes), then disconnects and stops itself.
+- The user-selectable playlist (URI + name + cover art URL) is browsed via the Web API picker in `AlarmScreen`, persisted in `AlarmPreferences`, and read at alarm-fire time. `AlarmScreen` also exposes a "Test alarm now" button **only in debug builds** (gated by `BuildConfig.DEBUG`) that starts `SpotifyAlarm` directly to iterate on playlist changes without waiting for the scheduled time.
 - Permissions: `USE_EXACT_ALARM`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `WAKE_LOCK`, plus the pre-existing `INTERNET` and `POST_NOTIFICATIONS`.
 - Boot persistence is not wired. If the phone reboots before the alarm fires it will not re-arm — reopening the app is not sufficient either; toggling enabled off/on re-schedules. Adding a `BootReceiver` is the future fix.
 - First-time Spotify authorization: the App Remote SDK may try to pop Spotify's own auth activity. On Android 14+ this is subject to Background Activity Launch restrictions — if the Spotify app has not been recently foregrounded, the prompt is blocked silently. For the very first connect, open the Spotify app (playing any song) before the alarm fires; thereafter the authorization is cached and the alarm works without UI interaction.
