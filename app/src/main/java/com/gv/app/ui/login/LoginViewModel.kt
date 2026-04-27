@@ -2,6 +2,7 @@ package com.gv.app.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.gv.app.BuildConfig
 import com.gv.app.data.api.ApiService
 import com.gv.app.data.api.RetrofitClient
 import com.gv.app.data.local.TokenManager
@@ -33,6 +34,15 @@ class LoginViewModel(
     val uiState: StateFlow<LoginUiState> = _uiState
 
     private val gson = Gson()
+
+    init {
+        // Debug-only bypass: skips the real login + 2FA round-trip so the post-login UI is
+        // reachable without a backend. Stripped from release builds via BuildConfig.DEBUG.
+        if (BuildConfig.DEBUG && tokenManager.tokenFlow.value == null) {
+            tokenManager.saveToken("debug-bypass-token")
+            _uiState.value = LoginUiState.Success
+        }
+    }
 
     fun submitPassword(password: String) {
         _uiState.value = LoginUiState.Loading

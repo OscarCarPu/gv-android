@@ -9,7 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.gv.app.data.api.RetrofitClient
-import com.gv.app.ui.alarm.AlarmScreen
+import com.gv.app.ui.home.HomeScreen
 import com.gv.app.ui.login.LoginScreen
 
 private object Routes {
@@ -37,6 +37,6 @@ fun AppNavigation() {
 
     NavHost(navController = navController, startDestination = start) {
         composable(Routes.LOGIN) { LoginScreen() }
-        composable(Routes.HOME) { AlarmScreen() }
+        composable(Routes.HOME) { HomeScreen() }
     }
 }

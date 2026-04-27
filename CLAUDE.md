@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a single **daily Spotify alarm** as the post-login home screen. Other feature screens (habits, tasks, finance) are intentionally deferred. Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
+GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen whose only working tab is the daily Spotify alarm; the remaining tabs (Habits, Tasks, Finance) are present as disabled placeholders in the bottom navigation bar. Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
 
 ## Build & Development Commands
 
@@ -54,7 +54,7 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 - **domain/model/** — Auth data classes only (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`).
 - **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day), `SpotifyAlarm` (see below).
 - **notification/** — Legacy skeleton (`NotificationHelper`, `NotificationScheduler`, `NotificationReceiver`) currently unused by any active feature. Retained only because the manifest receiver entry is still present; scheduled for removal.
-- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `alarm/` (AlarmScreen + AlarmViewModel), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `AlarmScreen`), `theme/` (see Theme).
+- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four tabs; only the Alarm tab is enabled and renders `AlarmScreen`, the others are disabled placeholders), `alarm/` (AlarmScreen + AlarmViewModel), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
 
 **Key patterns:**
 - **Auth routing**: `TokenManager.tokenFlow` drives navigation inside `AppNavigation`. On token change, the NavHost navigates between `login` and `home` routes.
@@ -78,7 +78,11 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 
 ## Navigation
 
-Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `AlarmScreen`.
+Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `HomeScreen`, which itself owns the bottom-tab navigation between feature screens (currently only Alarm is wired up).
+
+### Debug login bypass
+
+`LoginViewModel.init` short-circuits the login flow on debug builds (`BuildConfig.DEBUG`) by writing a placeholder token to `TokenManager` when no token is present, which immediately routes the app to `home`. This is a developer convenience so the alarm/home UI is reachable without hitting the backend; release builds skip this branch entirely.
 
 ## Visual style
 
