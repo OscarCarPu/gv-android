@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen whose only working tab is the daily Spotify alarm; the remaining tabs (Habits, Tasks, Finance) are present as disabled placeholders in the bottom navigation bar. Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
+GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen with two working tabs — the daily Spotify alarm and Habits (list / log / delete for the day). The remaining tabs (Tasks, Finance) are present as disabled placeholders in the bottom navigation bar. Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
 
 ## Build & Development Commands
 
@@ -50,13 +50,13 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 
 **MVVM + Clean Architecture layers** under package `com.gv.app`:
 
-- **data/api/** — `ApiService` (Retrofit interface, 2 auth endpoints: `login`, `login2fa`), `RetrofitClient` (singleton with OkHttp auth interceptor).
+- **data/api/** — `ApiService` (Retrofit interface: 2 auth endpoints `login`, `login2fa` + 3 habit endpoints `getHabits`, `logHabit`, `deleteHabit`), `RetrofitClient` (singleton with OkHttp auth interceptor).
 - **data/local/** — `TokenManager` (SharedPreferences-based JWT storage exposing `StateFlow<String?>`).
-- **domain/model/** — Auth data classes only (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`).
+- **domain/model/** — `Models.kt` holds the auth DTOs (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`); `Habit.kt` holds the habit DTOs (`HabitWithLog`, `LogHabitRequest`, `LogHabitResponse`). Field names use snake_case to match the API JSON directly via Gson defaults.
 - **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled + selected playlist URI/name/imageUrl), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day).
 - **spotify/** — All Spotify integration in a single file `Spotify.kt`: `SpotifyAlarm` foreground Service, `SpotifyAuth` (PKCE OAuth state machine + token refresh), `SpotifyAuthCallbackActivity` (catches the `com.gv.app://spotify-callback` redirect), Retrofit Web API client, and the public `Spotify` entry point (`Spotify.state`, `Spotify.startLogin`, `Spotify.listMyPlaylists`).
 - **notification/** — Legacy skeleton (`NotificationHelper`, `NotificationScheduler`, `NotificationReceiver`) currently unused by any active feature. Retained only because the manifest receiver entry is still present; scheduled for removal.
-- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four tabs; only the Alarm tab is enabled and renders `AlarmScreen`, the others are disabled placeholders), `alarm/` (AlarmScreen + AlarmViewModel), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
+- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four tabs; Alarm and Habits are enabled, Tasks and Finance are disabled placeholders), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard — date-paginated list of habits for a single day), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
 
 **Key patterns:**
 - **Auth routing**: `TokenManager.tokenFlow` drives navigation inside `AppNavigation`. On token change, the NavHost navigates between `login` and `home` routes.
@@ -75,6 +75,14 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 - Boot persistence is not wired. If the phone reboots before the alarm fires it will not re-arm — reopening the app is not sufficient either; toggling enabled off/on re-schedules. Adding a `BootReceiver` is the future fix.
 - First-time Spotify authorization: the App Remote SDK may try to pop Spotify's own auth activity. On Android 14+ this is subject to Background Activity Launch restrictions — if the Spotify app has not been recently foregrounded, the prompt is blocked silently. For the very first connect, open the Spotify app (playing any song) before the alarm fires; thereafter the authorization is cached and the alarm works without UI interaction.
 
+### Habits feature
+
+- Read-only-plus-log client for the `gv-api` habits backend. Three endpoints in use: `GET /habits?date=YYYY-MM-DD` (list with today's log + computed streaks), `POST /habits/log` (upsert `{habit_id, date, value}`), `DELETE /habits/{id}`. Habit creation is intentionally not on Android — habits are seeded via `gv-web` or the API directly.
+- `HabitsScreen` shows a date header (prev / today / next), then a `LazyColumn` of `HabitCard`s for the selected day. The `HabitsViewModel` holds `state: StateFlow<HabitsUiState>`, `selectedDate: StateFlow<LocalDate>`, and a one-shot `toast: SharedFlow<String>` for error messages.
+- **Optimistic logging**: `+`/`−` buttons and the numeric input mutate `log_value` in-memory immediately, then debounce (300 ms per habit) before POSTing. On success the affected day is re-fetched so server-computed `period_value` and streak counters reconcile; on failure the previous snapshot is restored and a snackbar surfaces the error.
+- **Delete UX**: long-press a card → `AlertDialog` with `Danger`-tinted confirm. The card is removed from the list optimistically; failure restores it.
+- Card visuals: name + optional frequency pill (only when not `daily`) + optional `Star` icon for `recording_required` (server flag — when on, missing days break the streak; when off, missing days carry forward the previous value). Progress bar and streaks (fire = current, trophy = longest) only render when at least one of `target_min` / `target_max` is set.
+
 ## Testing
 
 - **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test (wired in Gradle; no tests currently exist under `app/src/test/` or `app/src/androidTest/`).
@@ -82,10 +90,6 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 ## Navigation
 
 Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `HomeScreen`, which itself owns the bottom-tab navigation between feature screens (currently only Alarm is wired up).
-
-### Debug login bypass
-
-`LoginViewModel.init` short-circuits the login flow on debug builds (`BuildConfig.DEBUG`) by writing a placeholder token to `TokenManager` when no token is present, which immediately routes the app to `home`. This is a developer convenience so the alarm/home UI is reachable without hitting the backend; release builds skip this branch entirely.
 
 ## Visual style
 
