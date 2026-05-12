@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.gv.app.ui.alarm.AlarmScreen
 import com.gv.app.ui.habits.HabitsScreen
 import com.gv.app.ui.money.MoneyScreen
+import com.gv.app.ui.tasks.TasksScreen
 import com.gv.app.ui.theme.GvColors
 
 private enum class HomeTab(
@@ -33,7 +34,7 @@ private enum class HomeTab(
 ) {
     ALARM("Alarm", Icons.Outlined.Alarm, enabled = true),
     HABITS("Habits", Icons.Outlined.CheckCircle, enabled = true),
-    TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = false),
+    TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = true),
     FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = true),
 }
 
@@ -53,8 +54,8 @@ fun HomeScreen() {
             when (selected) {
                 HomeTab.ALARM -> AlarmScreen()
                 HomeTab.HABITS -> HabitsScreen()
+                HomeTab.TASKS -> TasksScreen()
                 HomeTab.FINANCE -> MoneyScreen()
-                HomeTab.TASKS -> Unit
             }
         }
     }

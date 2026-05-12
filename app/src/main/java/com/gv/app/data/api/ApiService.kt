@@ -13,13 +13,30 @@ import com.gv.app.domain.model.Overview
 import com.gv.app.domain.model.TokenResponse
 import com.gv.app.domain.model.Transaction
 import com.gv.app.domain.model.TwoFactorRequest
+import com.gv.app.domain.model.ActiveTimeEntryResponse
+import com.gv.app.domain.model.ActiveTreeNode
+import com.gv.app.domain.model.CreateTaskRequest
+import com.gv.app.domain.model.CreateTimeEntryRequest
+import com.gv.app.domain.model.CreateTodoRequest
+import com.gv.app.domain.model.PlanTodayResponse
+import com.gv.app.domain.model.ProjectListItem
+import com.gv.app.domain.model.TaskByDueDateResponse
+import com.gv.app.domain.model.TaskFullResponse
+import com.gv.app.domain.model.TaskResponse
+import com.gv.app.domain.model.TimeEntryResponse
+import com.gv.app.domain.model.TimeEntrySummaryResponse
+import com.gv.app.domain.model.TodoResponse
 import com.gv.app.domain.model.UpdateAccountRequest
 import com.gv.app.domain.model.UpdateCategoryRequest
+import com.gv.app.domain.model.UpdateTaskRequest
+import com.gv.app.domain.model.UpdateTimeEntryRequest
+import com.gv.app.domain.model.UpdateTodoRequest
 import com.gv.app.domain.model.UpdateTransactionRequest
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -83,4 +100,60 @@ interface ApiService {
 
     @DELETE("finance/transactions/{id}")
     suspend fun deleteTransaction(@Path("id") id: Int): Response<Unit>
+
+    // --- Tasks ---
+
+    @GET("tasks/tasks/by-due-date")
+    suspend fun getTasksByDueDate(): Response<List<TaskByDueDateResponse>>
+
+    @GET("tasks/tree")
+    suspend fun getActiveTree(): Response<List<ActiveTreeNode>>
+
+    @GET("tasks/tasks/{id}")
+    suspend fun getTask(@Path("id") id: Int): Response<TaskFullResponse>
+
+    @POST("tasks/tasks")
+    suspend fun createTask(@Body request: CreateTaskRequest): Response<TaskResponse>
+
+    @PATCH("tasks/tasks/{id}")
+    suspend fun updateTask(@Path("id") id: Int, @Body request: UpdateTaskRequest): Response<TaskResponse>
+
+    @DELETE("tasks/tasks/{id}")
+    suspend fun deleteTask(@Path("id") id: Int): Response<Unit>
+
+    @GET("tasks/projects/list-fast")
+    suspend fun listProjectsFast(): Response<List<ProjectListItem>>
+
+    // --- Todos ---
+
+    @POST("tasks/todos")
+    suspend fun createTodo(@Body request: CreateTodoRequest): Response<TodoResponse>
+
+    @PATCH("tasks/todos/{id}")
+    suspend fun updateTodo(@Path("id") id: Int, @Body request: UpdateTodoRequest): Response<TodoResponse>
+
+    @DELETE("tasks/todos/{id}")
+    suspend fun deleteTodo(@Path("id") id: Int): Response<Unit>
+
+    // --- Time entries (timer) ---
+
+    @POST("tasks/time-entries")
+    suspend fun createTimeEntry(@Body request: CreateTimeEntryRequest): Response<TimeEntryResponse>
+
+    @PATCH("tasks/time-entries/{id}")
+    suspend fun updateTimeEntry(@Path("id") id: Int, @Body request: UpdateTimeEntryRequest): Response<TimeEntryResponse>
+
+    @DELETE("tasks/time-entries/{id}")
+    suspend fun deleteTimeEntry(@Path("id") id: Int): Response<Unit>
+
+    @GET("tasks/time-entries/active")
+    suspend fun getActiveTimeEntry(): Response<ActiveTimeEntryResponse>
+
+    @GET("tasks/time-entries/summary")
+    suspend fun getTimeEntrySummary(): Response<TimeEntrySummaryResponse>
+
+    // --- Plan ---
+
+    @GET("plan/today")
+    suspend fun getPlanToday(): Response<PlanTodayResponse>
 }
