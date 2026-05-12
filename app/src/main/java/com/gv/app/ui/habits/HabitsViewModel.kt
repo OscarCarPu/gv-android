@@ -100,7 +100,10 @@ class HabitsViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyOptimistic(habitId: Int, newValue: Double) {
         val loaded = _state.value as? HabitsUiState.Loaded ?: return
         val updated = loaded.habits.map {
-            if (it.id == habitId) it.copy(log_value = newValue) else it
+            if (it.id == habitId) {
+                val delta = newValue - (it.log_value ?: 0.0)
+                it.copy(log_value = newValue, period_value = it.period_value + delta)
+            } else it
         }
         _state.value = HabitsUiState.Loaded(updated)
     }

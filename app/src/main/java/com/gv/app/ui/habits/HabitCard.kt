@@ -106,6 +106,11 @@ fun HabitCard(
                 currentStreak = habit.current_streak,
                 longestStreak = habit.longest_streak,
             )
+        } else if (habit.frequency != "daily") {
+            PeriodValueText(
+                frequency = habit.frequency,
+                periodValue = habit.period_value,
+            )
         }
     }
 }
@@ -261,6 +266,15 @@ private fun ProgressText(
     }
     Text(
         text = "${formatValue(periodValue)} ($rangeText)",
+        style = MaterialTheme.typography.labelMedium,
+        color = GvColors.TextMuted,
+    )
+}
+
+@Composable
+private fun PeriodValueText(frequency: String, periodValue: Double) {
+    Text(
+        text = "$frequency: ${formatValue(periodValue)}",
         style = MaterialTheme.typography.labelMedium,
         color = GvColors.TextMuted,
     )
