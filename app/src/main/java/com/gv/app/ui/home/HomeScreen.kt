@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.gv.app.ui.alarm.AlarmScreen
 import com.gv.app.ui.habits.HabitsScreen
+import com.gv.app.ui.money.MoneyScreen
 import com.gv.app.ui.theme.GvColors
 
 private enum class HomeTab(
@@ -33,7 +34,7 @@ private enum class HomeTab(
     ALARM("Alarm", Icons.Outlined.Alarm, enabled = true),
     HABITS("Habits", Icons.Outlined.CheckCircle, enabled = true),
     TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = false),
-    FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = false),
+    FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = true),
 }
 
 @Composable
@@ -52,7 +53,8 @@ fun HomeScreen() {
             when (selected) {
                 HomeTab.ALARM -> AlarmScreen()
                 HomeTab.HABITS -> HabitsScreen()
-                HomeTab.TASKS, HomeTab.FINANCE -> Unit
+                HomeTab.FINANCE -> MoneyScreen()
+                HomeTab.TASKS -> Unit
             }
         }
     }

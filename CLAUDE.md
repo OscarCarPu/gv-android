@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen with two working tabs — the daily Spotify alarm and Habits (list / log / delete for the day). The remaining tabs (Tasks, Finance) are present as disabled placeholders in the bottom navigation bar. Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
+GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen with three working tabs — the daily Spotify alarm, Habits (list / log / delete for the day), and Money (overview KPIs + CRUD for transactions, accounts, and categories). The remaining tab (Tasks) is present as a disabled placeholder in the bottom navigation bar. Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
 
 ## Build & Development Commands
 
@@ -50,13 +50,13 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 
 **MVVM + Clean Architecture layers** under package `com.gv.app`:
 
-- **data/api/** — `ApiService` (Retrofit interface: 2 auth endpoints `login`, `login2fa` + 3 habit endpoints `getHabits`, `logHabit`, `deleteHabit`), `RetrofitClient` (singleton with OkHttp auth interceptor).
+- **data/api/** — `ApiService` (Retrofit interface: 2 auth endpoints `login`, `login2fa`; 3 habit endpoints `getHabits`, `logHabit`, `deleteHabit`; and the `/finance/*` endpoints — overview, accounts CRUD, categories CRUD, transactions CRUD + GET-by-id), `RetrofitClient` (singleton with OkHttp auth interceptor).
 - **data/local/** — `TokenManager` (SharedPreferences-based JWT storage exposing `StateFlow<String?>`).
-- **domain/model/** — `Models.kt` holds the auth DTOs (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`); `Habit.kt` holds the habit DTOs (`HabitWithLog`, `LogHabitRequest`, `LogHabitResponse`). Field names use snake_case to match the API JSON directly via Gson defaults.
+- **domain/model/** — `Models.kt` holds the auth DTOs (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`); `Habit.kt` holds the habit DTOs; `Money.kt` holds `Account`, `Category`, `Transaction`, `Overview*`, plus `Create*` / `Update*` request bodies. Field names use snake_case to match the API JSON directly via Gson defaults.
 - **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled + selected playlist URI/name/imageUrl), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day).
 - **spotify/** — All Spotify integration in a single file `Spotify.kt`: `SpotifyAlarm` foreground Service, `SpotifyAuth` (PKCE OAuth state machine + token refresh), `SpotifyAuthCallbackActivity` (catches the `com.gv.app://spotify-callback` redirect), Retrofit Web API client, and the public `Spotify` entry point (`Spotify.state`, `Spotify.startLogin`, `Spotify.listMyPlaylists`).
 - **notification/** — Legacy skeleton (`NotificationHelper`, `NotificationScheduler`, `NotificationReceiver`) currently unused by any active feature. Retained only because the manifest receiver entry is still present; scheduled for removal.
-- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four tabs; Alarm and Habits are enabled, Tasks and Finance are disabled placeholders), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard — date-paginated list of habits for a single day), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
+- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four tabs; Alarm, Habits, and Finance are enabled, Tasks is a disabled placeholder), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard — date-paginated list of habits for a single day), `money/` (MoneyScreen + MoneyViewModel + FormSheets + MoneyUtils — three sub-tabs Overview/Accounts/Categories, FAB-driven CRUD via bottom sheets, tree-rendered categories with expand/collapse; see `docs/money.md`), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
 
 **Key patterns:**
 - **Auth routing**: `TokenManager.tokenFlow` drives navigation inside `AppNavigation`. On token change, the NavHost navigates between `login` and `home` routes.
