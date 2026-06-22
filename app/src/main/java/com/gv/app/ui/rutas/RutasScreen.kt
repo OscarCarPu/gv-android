@@ -1,10 +1,13 @@
 package com.gv.app.ui.rutas
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,12 +42,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +65,7 @@ import com.gv.app.ui.theme.LocalSpacing
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.launch
 
 private val PROVINCES = listOf("A Coruña", "Lugo", "Ourense", "Pontevedra")
 
@@ -183,32 +191,83 @@ private fun MapCanvas(
     val stroke = GvColors.BorderLight
     val activeStroke = GvColors.Primary
 
+    // Pinch-to-zoom + pan. The base `projection` maps lon/lat → base screen coords; the gesture
+    // applies screen = base * zoom + pan on top (and the inverse for tap hit-testing).
+    var zoom by remember { mutableStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+
+    // Brief brighten-on-tap flash, like a hover.
+    val scope = rememberCoroutineScope()
+    var flashedName by remember { mutableStateOf<String?>(null) }
+    val flashAlpha = remember { Animatable(0f) }
+
     Canvas(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { size = it }
+            .pointerInput(Unit) {
+                detectTransformGestures { centroid, panChange, zoomChange, _ ->
+                    val newZoom = (zoom * zoomChange).coerceIn(1f, 6f)
+                    // Keep the point under the gesture centroid fixed while zooming.
+                    val baseUnder = (centroid - pan) / zoom
+                    pan = clampPan(centroid - baseUnder * newZoom + panChange, newZoom, size)
+                    zoom = newZoom
+                }
+            }
             .pointerInput(projection) {
                 if (projection == null) return@pointerInput
-                detectTapGestures { offset ->
-                    concellos.firstOrNull { it.containsScreenPoint(offset.x, offset.y, projection) }
-                        ?.let { onTapConcello(it.name) }
-                }
+                detectTapGestures(
+                    onDoubleTap = { offset ->
+                        if (zoom > 1f) {
+                            zoom = 1f; pan = Offset.Zero
+                        } else {
+                            val target = 2.5f
+                            val baseUnder = (offset - pan) / zoom
+                            zoom = target
+                            pan = clampPan(offset - baseUnder * target, target, size)
+                        }
+                    },
+                    onTap = { offset ->
+                        val base = (offset - pan) / zoom
+                        concellos.firstOrNull { it.containsScreenPoint(base.x, base.y, projection) }
+                            ?.let { hit ->
+                                flashedName = hit.name
+                                scope.launch {
+                                    flashAlpha.snapTo(1f)
+                                    flashAlpha.animateTo(0f, tween(durationMillis = 200))
+                                }
+                                onTapConcello(hit.name)
+                            }
+                    },
+                )
             },
     ) {
-        paths.forEach { (concello, path) ->
-            val visited = marks.containsKey(concello.name)
-            val dim = activeProvince != null && concello.province != activeProvince
-            val fill = (if (visited) visitedFill else unvisitedFill).copy(alpha = if (dim) 0.2f else 1f)
-            drawPath(path, color = fill)
-            val isActiveProv = activeProvince != null && concello.province == activeProvince
-            drawPath(
-                path,
-                color = (if (isActiveProv) activeStroke else stroke).copy(alpha = if (dim) 0.2f else 1f),
-                style = Stroke(width = if (isActiveProv) 1.5f else 0.8f),
-            )
+        withTransform({ translate(pan.x, pan.y); scale(zoom, zoom, pivot = Offset.Zero) }) {
+            paths.forEach { (concello, path) ->
+                val visited = marks.containsKey(concello.name)
+                val dim = activeProvince != null && concello.province != activeProvince
+                val fill = (if (visited) visitedFill else unvisitedFill).copy(alpha = if (dim) 0.2f else 1f)
+                drawPath(path, color = fill)
+                val isActiveProv = activeProvince != null && concello.province == activeProvince
+                drawPath(
+                    path,
+                    color = (if (isActiveProv) activeStroke else stroke).copy(alpha = if (dim) 0.2f else 1f),
+                    // Divide by zoom so the outline stays a constant on-screen width.
+                    style = Stroke(width = (if (isActiveProv) 1.5f else 0.8f) / zoom),
+                )
+                if (concello.name == flashedName && flashAlpha.value > 0f) {
+                    drawPath(path, color = Color.White.copy(alpha = flashAlpha.value * 0.4f))
+                }
+            }
         }
     }
 }
+
+/** Keep the zoomed/panned map covering the viewport (no over-pan; locked when zoom == 1). */
+private fun clampPan(pan: Offset, zoom: Float, size: IntSize): Offset = Offset(
+    pan.x.coerceIn(size.width * (1 - zoom), 0f),
+    pan.y.coerceIn(size.height * (1 - zoom), 0f),
+)
 
 private fun buildPath(concello: Concello, projection: GeoProjection): Path {
     val path = Path()
