@@ -181,6 +181,30 @@ data class PlanBlockResponse(
     val task_finished_at: String?,
 )
 
+/** A time entry joined with its task — the agenda/day-list row shape. */
+data class TimeEntryWithTaskResponse(
+    val id: Int,
+    val task_id: Int,
+    val task_name: String,
+    val task_type: String?,
+    val recurrence: Int?,
+    val priority: Int?,
+    val project_id: Int?,
+    val project_name: String?,
+    val started_at: String,
+    val finished_at: String?,
+    val comment: String?,
+    val task_finished_at: String?,
+    val time_spent: Long,
+)
+
+/** Lightweight task option for the time-entry editor's task picker (built from cache). */
+data class TaskOption(
+    val id: Int,
+    val name: String,
+    val projectName: String?,
+)
+
 data class PlanTotals(
     val task_seconds: Long,
     val free_seconds: Long,
@@ -196,4 +220,84 @@ data class PlanTodayResponse(
 data class ProjectListItem(
     val id: Int,
     val name: String,
+)
+
+/**
+ * UI model for the running timer. Works whether or not the underlying time entry has reached
+ * the server yet ([serverId] is null until synced); the screen ticks elapsed from [startedAt].
+ */
+data class ActiveTimer(
+    val outboxId: String,
+    val serverId: Int?,
+    val taskId: Int,
+    val taskName: String,
+    val projectName: String?,
+    val taskType: String?,
+    val recurrence: Int?,
+    val priority: Int?,
+    val startedAt: String,
+    val comment: String?,
+)
+
+// --- Project endpoints (added for parity with gv-api tasks/projects) ---
+
+data class ProjectResponse(
+    val id: Int,
+    val name: String,
+    val description: String?,
+    val due_at: String?,
+    val parent_id: Int?,
+    val started_at: String?,
+    val finished_at: String?,
+)
+
+data class ProjectDetailResponse(
+    val id: Int,
+    val parent_id: Int?,
+    val name: String,
+    val description: String?,
+    val due_at: String?,
+    val started_at: String?,
+    val finished_at: String?,
+    val time_spent: Long,
+)
+
+/**
+ * A child of a project, returned already sorted into status groups by the server.
+ * Polymorphic on [type] ('project' | 'task'); project-only and task-only fields are nullable.
+ */
+data class ProjectChildNode(
+    val id: Int,
+    val type: String,
+    val name: String,
+    val description: String?,
+    val due_at: String?,
+    val started_at: String?,
+    val finished_at: String?,
+    val time_spent: Long,
+    val parent_id: Int?,
+    val project_id: Int?,
+    val task_type: String?,
+    val recurrence: Int?,
+    val priority: Int?,
+    val depends_on: List<TaskDepRef>?,
+    val blocks: List<TaskDepRef>?,
+    val blocked: Boolean?,
+    val todos: List<TodoResponse>?,
+)
+
+data class ProjectChildrenResponse(
+    val project: ProjectDetailResponse,
+    val children: List<ProjectChildNode>,
+)
+
+/** Lightweight task row for pickers (reassign timer / time entry). */
+data class TaskFastResponse(
+    val id: Int,
+    val name: String,
+    val project_id: Int?,
+    val project_name: String?,
+    val task_type: String,
+    val recurrence: Int?,
+    val priority: Int,
 )

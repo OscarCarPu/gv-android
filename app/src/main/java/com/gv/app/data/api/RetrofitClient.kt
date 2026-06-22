@@ -11,7 +11,8 @@ object RetrofitClient {
     lateinit var tokenManager: TokenManager
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        // Don't leak request/response bodies (incl. tokens) in release builds.
+        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
     }
 
     private val okHttpClient by lazy {

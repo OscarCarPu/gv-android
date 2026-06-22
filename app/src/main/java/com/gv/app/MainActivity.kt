@@ -6,9 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.gv.app.data.api.RetrofitClient
-import com.gv.app.data.local.TokenManager
-import com.gv.app.spotify.SpotifyAuth
 import com.gv.app.ui.navigation.AppNavigation
 import com.gv.app.ui.theme.GvTheme
 
@@ -17,8 +14,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        RetrofitClient.tokenManager = TokenManager(applicationContext)
-        SpotifyAuth.init(applicationContext)
+        // App-wide initialisation (TokenManager, Spotify, DI container) now lives in GvApp,
+        // which runs before any Activity is created.
 
         setContent {
             GvTheme {

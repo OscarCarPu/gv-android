@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,6 +97,15 @@ fun MoneyScreen(vm: MoneyViewModel = viewModel()) {
     var sheet by remember { mutableStateOf<ActiveSheet?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
 
+    // Swipe left/right to change part, kept in sync with the tab bar.
+    val pagerState = rememberPagerState(initialPage = tab.ordinal) { MoneyTab.entries.size }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page -> tab = MoneyTab.entries[page] }
+    }
+    LaunchedEffect(tab) {
+        if (pagerState.currentPage != tab.ordinal) pagerState.animateScrollToPage(tab.ordinal)
+    }
+
     LaunchedEffect(vm) {
         vm.toast.collect { message -> snackbar.showSnackbar(message) }
     }
@@ -109,33 +121,39 @@ fun MoneyScreen(vm: MoneyViewModel = viewModel()) {
             when (val s = state) {
                 is MoneyUiState.Loading -> CenteredLoader()
                 is MoneyUiState.Error -> ErrorState(s.message, onRetry = vm::refresh)
-                is MoneyUiState.Loaded -> when (tab) {
-                    MoneyTab.OVERVIEW -> OverviewView(
-                        overview = s.data.overview,
-                        onEditTx = { ovTx ->
-                            vm.loadTransaction(ovTx.id) { full ->
-                                if (full != null) sheet = ActiveSheet.NewTransaction(full)
-                            }
-                        },
-                        onDeleteTx = { ovTx ->
-                            pendingDelete = PendingDelete.Tx(
-                                id = ovTx.id,
-                                label = ovTx.description?.takeIf { it.isNotBlank() }
-                                    ?: ovTx.category_name
-                                    ?: "this movement",
-                            )
-                        },
-                    )
-                    MoneyTab.ACCOUNTS -> AccountsView(
-                        accounts = s.data.accounts,
-                        onEdit = { sheet = ActiveSheet.EditAccount(it) },
-                        onDelete = { pendingDelete = PendingDelete.Acc(it) },
-                    )
-                    MoneyTab.CATEGORIES -> CategoriesView(
-                        categories = s.data.categories,
-                        onEdit = { sheet = ActiveSheet.EditCategory(it) },
-                        onDelete = { pendingDelete = PendingDelete.Cat(it) },
-                    )
+                is MoneyUiState.Loaded -> HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    key = { it },
+                ) { page ->
+                    when (MoneyTab.entries[page]) {
+                        MoneyTab.OVERVIEW -> OverviewView(
+                            overview = s.data.overview,
+                            onEditTx = { ovTx ->
+                                vm.loadTransaction(ovTx.id) { full ->
+                                    if (full != null) sheet = ActiveSheet.NewTransaction(full)
+                                }
+                            },
+                            onDeleteTx = { ovTx ->
+                                pendingDelete = PendingDelete.Tx(
+                                    id = ovTx.id,
+                                    label = ovTx.description?.takeIf { it.isNotBlank() }
+                                        ?: ovTx.category_name
+                                        ?: "this movement",
+                                )
+                            },
+                        )
+                        MoneyTab.ACCOUNTS -> AccountsView(
+                            accounts = s.data.accounts,
+                            onEdit = { sheet = ActiveSheet.EditAccount(it) },
+                            onDelete = { pendingDelete = PendingDelete.Acc(it) },
+                        )
+                        MoneyTab.CATEGORIES -> CategoriesView(
+                            categories = s.data.categories,
+                            onEdit = { sheet = ActiveSheet.EditCategory(it) },
+                            onDelete = { pendingDelete = PendingDelete.Cat(it) },
+                        )
+                    }
                 }
             }
         }

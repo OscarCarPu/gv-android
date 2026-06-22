@@ -32,6 +32,14 @@ import com.gv.app.domain.model.UpdateTaskRequest
 import com.gv.app.domain.model.UpdateTimeEntryRequest
 import com.gv.app.domain.model.UpdateTodoRequest
 import com.gv.app.domain.model.UpdateTransactionRequest
+import com.gv.app.domain.model.ConcelloMark
+import com.gv.app.domain.model.CreateMarkRequest
+import com.gv.app.domain.model.ProjectChildrenResponse
+import com.gv.app.domain.model.ProjectDetailResponse
+import com.gv.app.domain.model.ProjectResponse
+import com.gv.app.domain.model.TaskFastResponse
+import com.gv.app.domain.model.UpdateMarkRequest
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -43,6 +51,9 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface ApiService {
+
+    @GET("health")
+    suspend fun health(): Response<Unit>
 
     @POST("login")
     suspend fun login(@Body request: LoginRequest): Response<TokenResponse>
@@ -104,13 +115,16 @@ interface ApiService {
     // --- Tasks ---
 
     @GET("tasks/tasks/by-due-date")
-    suspend fun getTasksByDueDate(): Response<List<TaskByDueDateResponse>>
+    suspend fun getTasksByDueDate(@Query("min_priority") minPriority: Int? = null): Response<List<TaskByDueDateResponse>>
 
     @GET("tasks/tree")
-    suspend fun getActiveTree(): Response<List<ActiveTreeNode>>
+    suspend fun getActiveTree(@Query("min_priority") minPriority: Int? = null): Response<List<ActiveTreeNode>>
 
     @GET("tasks/tasks/{id}")
     suspend fun getTask(@Path("id") id: Int): Response<TaskFullResponse>
+
+    @GET("tasks/tasks/list-fast")
+    suspend fun listTasksFast(): Response<List<TaskFastResponse>>
 
     @POST("tasks/tasks")
     suspend fun createTask(@Body request: CreateTaskRequest): Response<TaskResponse>
@@ -118,8 +132,33 @@ interface ApiService {
     @PATCH("tasks/tasks/{id}")
     suspend fun updateTask(@Path("id") id: Int, @Body request: UpdateTaskRequest): Response<TaskResponse>
 
+    /**
+     * Partial task update that can clear NullableTime fields and replace depends_on/blocks.
+     * Body is built with [PatchBody] so explicit JSON nulls survive serialisation.
+     */
+    @PATCH("tasks/tasks/{id}")
+    suspend fun updateTaskBody(@Path("id") id: Int, @Body body: RequestBody): Response<TaskResponse>
+
     @DELETE("tasks/tasks/{id}")
     suspend fun deleteTask(@Path("id") id: Int): Response<Unit>
+
+    // --- Projects ---
+
+    @GET("tasks/projects")
+    suspend fun listProjects(): Response<List<ProjectResponse>>
+
+    @GET("tasks/projects/{id}")
+    suspend fun getProject(@Path("id") id: Int): Response<ProjectDetailResponse>
+
+    @GET("tasks/projects/{id}/children")
+    suspend fun getProjectChildren(@Path("id") id: Int): Response<ProjectChildrenResponse>
+
+    /** Partial project update (clearable dates). Body built with [PatchBody]. */
+    @PATCH("tasks/projects/{id}")
+    suspend fun updateProject(@Path("id") id: Int, @Body body: RequestBody): Response<ProjectResponse>
+
+    @DELETE("tasks/projects/{id}")
+    suspend fun deleteProject(@Path("id") id: Int): Response<Unit>
 
     @GET("tasks/projects/list-fast")
     suspend fun listProjectsFast(): Response<List<ProjectListItem>>
@@ -143,8 +182,18 @@ interface ApiService {
     @PATCH("tasks/time-entries/{id}")
     suspend fun updateTimeEntry(@Path("id") id: Int, @Body request: UpdateTimeEntryRequest): Response<TimeEntryResponse>
 
+    /** Partial time-entry update that can clear finished_at (re-open). Body built with [PatchBody]. */
+    @PATCH("tasks/time-entries/{id}")
+    suspend fun updateTimeEntryBody(@Path("id") id: Int, @Body body: RequestBody): Response<TimeEntryResponse>
+
     @DELETE("tasks/time-entries/{id}")
     suspend fun deleteTimeEntry(@Path("id") id: Int): Response<Unit>
+
+    @GET("tasks/time-entries")
+    suspend fun listTimeEntries(
+        @Query("start_time") startTime: String,
+        @Query("end_time") endTime: String? = null,
+    ): Response<List<com.gv.app.domain.model.TimeEntryWithTaskResponse>>
 
     @GET("tasks/time-entries/active")
     suspend fun getActiveTimeEntry(): Response<ActiveTimeEntryResponse>
@@ -156,4 +205,21 @@ interface ApiService {
 
     @GET("plan/today")
     suspend fun getPlanToday(): Response<PlanTodayResponse>
+
+    // --- Rutas (Routes): Galicia municipality visit marks ---
+
+    @GET("rutas/marks")
+    suspend fun listMarks(): Response<List<ConcelloMark>>
+
+    @GET("rutas/marks/{id}")
+    suspend fun getMark(@Path("id") id: Int): Response<ConcelloMark>
+
+    @POST("rutas/marks")
+    suspend fun createMark(@Body request: CreateMarkRequest): Response<ConcelloMark>
+
+    @PUT("rutas/marks/{id}")
+    suspend fun updateMark(@Path("id") id: Int, @Body request: UpdateMarkRequest): Response<ConcelloMark>
+
+    @DELETE("rutas/marks/{id}")
+    suspend fun deleteMark(@Path("id") id: Int): Response<Unit>
 }

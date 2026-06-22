@@ -1,14 +1,24 @@
 package com.gv.app.ui.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -19,13 +29,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gv.app.data.local.ThemePreference
 import com.gv.app.ui.alarm.AlarmScreen
+import com.gv.app.ui.common.SettingsViewModel
+import com.gv.app.ui.common.SyncStatusBanner
 import com.gv.app.ui.habits.HabitsScreen
 import com.gv.app.ui.money.MoneyScreen
+import com.gv.app.ui.rutas.RutasScreen
 import com.gv.app.ui.tasks.TasksScreen
 import com.gv.app.ui.theme.GvColors
+import com.gv.app.ui.theme.LocalSpacing
 
 private enum class HomeTab(
     val label: String,
@@ -36,6 +54,7 @@ private enum class HomeTab(
     HABITS("Habits", Icons.Outlined.CheckCircle, enabled = true),
     TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = true),
     FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = true),
+    ROUTES("Routes", Icons.Outlined.Map, enabled = true),
 }
 
 @Composable
@@ -46,17 +65,46 @@ fun HomeScreen() {
         containerColor = GvColors.Bg,
         bottomBar = { GvNavigationBar(selected = selected, onSelect = { selected = it }) },
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            when (selected) {
-                HomeTab.ALARM -> AlarmScreen()
-                HomeTab.HABITS -> HabitsScreen()
-                HomeTab.TASKS -> TasksScreen()
-                HomeTab.FINANCE -> MoneyScreen()
+            TopBar(title = selected.label)
+            SyncStatusBanner()
+            Box(modifier = Modifier.weight(1f)) {
+                when (selected) {
+                    HomeTab.ALARM -> AlarmScreen()
+                    HomeTab.HABITS -> HabitsScreen()
+                    HomeTab.TASKS -> TasksScreen()
+                    HomeTab.FINANCE -> MoneyScreen()
+                    HomeTab.ROUTES -> RutasScreen()
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun TopBar(title: String, settings: SettingsViewModel = viewModel()) {
+    val spacing = LocalSpacing.current
+    val theme by settings.theme.collectAsStateWithLifecycle()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(GvColors.BgLight)
+            .padding(start = spacing.xl, end = spacing.sm, top = spacing.xs, bottom = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = GvColors.Text)
+        IconButton(onClick = settings::cycleTheme) {
+            // Show the mode you'd switch to: in light → moon, otherwise → sun.
+            Icon(
+                imageVector = if (theme == ThemePreference.LIGHT) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
+                contentDescription = if (theme == ThemePreference.LIGHT) "Switch to dark" else "Switch to light",
+                tint = GvColors.TextMuted,
+            )
         }
     }
 }

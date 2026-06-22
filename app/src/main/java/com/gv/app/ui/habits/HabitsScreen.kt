@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -21,7 +23,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -33,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -43,17 +45,49 @@ import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
+
+// Virtual page window centred on the reference day so the user can swipe ~±270 years.
+private const val PAGE_CENTER = 100_000
+private const val PAGE_COUNT = 200_001
+
+private fun pageToDate(reference: LocalDate, page: Int): LocalDate =
+    reference.plusDays((page - PAGE_CENTER).toLong())
+
+private fun dateToPage(reference: LocalDate, date: LocalDate): Int =
+    PAGE_CENTER + ChronoUnit.DAYS.between(reference, date).toInt()
 
 @Composable
 fun HabitsScreen(vm: HabitsViewModel = viewModel()) {
-    val state by vm.state.collectAsStateWithLifecycle()
     val date by vm.selectedDate.collectAsStateWithLifecycle()
+    val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<HabitWithLog?>(null) }
 
+    // Stable reference day for the page↔date mapping (fixed for the screen's lifetime).
+    val reference = remember { LocalDate.now() }
+    val pagerState = rememberPagerState(
+        initialPage = dateToPage(reference, date),
+        pageCount = { PAGE_COUNT },
+    )
+
     LaunchedEffect(vm) {
         vm.toast.collect { message -> snackbar.showSnackbar(message) }
+    }
+
+    // Swipe settles → move the selected day.
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            vm.onDateChange(pageToDate(reference, page))
+        }
+    }
+    // External day change (prev/next/today buttons) → animate the pager to match.
+    LaunchedEffect(date) {
+        val target = dateToPage(reference, date)
+        if (target != pagerState.currentPage) {
+            pagerState.animateScrollToPage(target)
+        }
     }
 
     Box(
@@ -69,13 +103,17 @@ fun HabitsScreen(vm: HabitsViewModel = viewModel()) {
                 onToday = vm::onToday,
             )
 
-            when (val s = state) {
-                is HabitsUiState.Loading -> CenteredLoader()
-                is HabitsUiState.Error -> ErrorState(message = s.message, onRetry = vm::refresh)
-                is HabitsUiState.Loaded -> HabitsList(
-                    habits = s.habits,
-                    onAdjust = vm::onAdjust,
-                    onSetValue = vm::onSetValue,
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                key = { it },
+            ) { page ->
+                val pageDate = pageToDate(reference, page)
+                HabitDayPage(
+                    vm = vm,
+                    date = pageDate,
+                    isCurrent = pageDate == date,
+                    refreshing = refreshing,
                     onLongPress = { pendingDelete = it },
                 )
             }
@@ -126,6 +164,30 @@ fun HabitsScreen(vm: HabitsViewModel = viewModel()) {
 }
 
 @Composable
+private fun HabitDayPage(
+    vm: HabitsViewModel,
+    date: LocalDate,
+    isCurrent: Boolean,
+    refreshing: Boolean,
+    onLongPress: (HabitWithLog) -> Unit,
+) {
+    val flow = remember(date) { vm.habitsFor(date) }
+    val habits by flow.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    when {
+        habits.isNotEmpty() -> HabitsList(
+            habits = habits,
+            onAdjust = vm::onAdjust,
+            onSetValue = vm::onSetValue,
+            onLongPress = onLongPress,
+        )
+        // Only the visible day shows the spinner; adjacent pre-rendered pages stay quiet.
+        isCurrent && refreshing -> CenteredLoader()
+        else -> EmptyState()
+    }
+}
+
+@Composable
 private fun DateHeader(
     date: LocalDate,
     onPrev: () -> Unit,
@@ -159,7 +221,7 @@ private fun DateHeader(
             )
             if (isToday) {
                 Text(
-                    text = "Today",
+                    text = "Today · swipe to change day",
                     style = MaterialTheme.typography.labelMedium,
                     color = GvColors.Primary,
                     fontWeight = FontWeight.Medium,
@@ -190,22 +252,6 @@ private fun HabitsList(
 ) {
     val spacing = LocalSpacing.current
 
-    if (habits.isEmpty()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(spacing.xxl),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "No habits yet. Create one from gv-web.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = GvColors.TextMuted,
-            )
-        }
-        return
-    }
-
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(spacing.xl),
@@ -223,33 +269,29 @@ private fun HabitsList(
 }
 
 @Composable
+private fun EmptyState() {
+    val spacing = LocalSpacing.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(spacing.xxl),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "No habits for this day. Create one from gv-web.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = GvColors.TextMuted,
+        )
+    }
+}
+
+@Composable
 private fun CenteredLoader() {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
         CircularProgressIndicator(color = GvColors.Primary)
-    }
-}
-
-@Composable
-private fun ErrorState(message: String, onRetry: () -> Unit) {
-    val spacing = LocalSpacing.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(spacing.xxl),
-        verticalArrangement = Arrangement.spacedBy(spacing.lg, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = GvColors.TextMuted,
-        )
-        OutlinedButton(onClick = onRetry) {
-            Text("Retry", color = GvColors.Primary)
-        }
     }
 }
 
