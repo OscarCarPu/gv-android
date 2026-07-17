@@ -222,4 +222,15 @@ interface ApiService {
 
     @DELETE("rutas/marks/{id}")
     suspend fun deleteMark(@Path("id") id: Int): Response<Unit>
+
+    // --- Voz (assistant): natural-language query/action + AI-spend metering ---
+
+    @POST("assistant/suggest")
+    suspend fun assistantSuggest(@Body request: com.gv.app.domain.model.VozSuggestRequest): Response<com.gv.app.domain.model.VozSuggestResponse>
+
+    @POST("assistant/execute")
+    suspend fun assistantExecute(@Body request: com.gv.app.domain.model.VozExecuteRequest): Response<com.gv.app.domain.model.VozExecuteResponse>
+
+    @GET("assistant/usage")
+    suspend fun getAssistantUsage(@Query("month") month: String): Response<com.gv.app.domain.model.AiUsage>
 }

@@ -10,6 +10,7 @@ import com.gv.app.data.local.db.OutboxMutation
 import com.gv.app.data.repository.HabitRepository
 import com.gv.app.data.repository.RutasRepository
 import com.gv.app.data.repository.TaskRepository
+import com.gv.app.data.repository.VozRepository
 import com.gv.app.data.sync.CacheRefresher
 import com.gv.app.data.sync.ConnectivityObserver
 import com.gv.app.data.sync.Outbox
@@ -60,6 +61,9 @@ class AppContainer(context: Context) {
 
     val rutasRepository: RutasRepository =
         RutasRepository(apiService, database, database.rutasDao(), outbox, syncScheduler)
+
+    // Voz assistant: live request/response, no offline sync — deliberately NOT in `repositories`.
+    val vozRepository: VozRepository = VozRepository(apiService)
 
     private val repositories: List<Any> = listOf(
         habitRepository,

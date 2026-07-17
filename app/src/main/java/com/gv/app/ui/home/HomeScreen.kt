@@ -11,11 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,12 +34,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gv.app.data.local.ThemePreference
-import com.gv.app.ui.alarm.AlarmScreen
 import com.gv.app.ui.common.SettingsViewModel
 import com.gv.app.ui.common.SyncStatusBanner
 import com.gv.app.ui.habits.HabitsScreen
 import com.gv.app.ui.money.MoneyScreen
-import com.gv.app.ui.rutas.RutasScreen
+import com.gv.app.ui.otros.OtrosScreen
 import com.gv.app.ui.tasks.TasksScreen
 import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
@@ -50,16 +48,15 @@ private enum class HomeTab(
     val icon: ImageVector,
     val enabled: Boolean,
 ) {
-    ALARM("Alarm", Icons.Outlined.Alarm, enabled = true),
     HABITS("Habits", Icons.Outlined.CheckCircle, enabled = true),
     TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = true),
     FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = true),
-    ROUTES("Routes", Icons.Outlined.Map, enabled = true),
+    OTROS("Otros", Icons.Outlined.MoreHoriz, enabled = true),
 }
 
 @Composable
 fun HomeScreen() {
-    var selected by rememberSaveable { mutableStateOf(HomeTab.ALARM) }
+    var selected by rememberSaveable { mutableStateOf(HomeTab.HABITS) }
 
     Scaffold(
         containerColor = GvColors.Bg,
@@ -74,11 +71,10 @@ fun HomeScreen() {
             SyncStatusBanner()
             Box(modifier = Modifier.weight(1f)) {
                 when (selected) {
-                    HomeTab.ALARM -> AlarmScreen()
                     HomeTab.HABITS -> HabitsScreen()
                     HomeTab.TASKS -> TasksScreen()
                     HomeTab.FINANCE -> MoneyScreen()
-                    HomeTab.ROUTES -> RutasScreen()
+                    HomeTab.OTROS -> OtrosScreen()
                 }
             }
         }
