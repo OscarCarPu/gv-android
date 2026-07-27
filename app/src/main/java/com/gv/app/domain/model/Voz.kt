@@ -17,6 +17,16 @@ data class VozSuggestResponse(
     val query: String,              // read: the SELECT; write: a description; reject: ""
     val warning: String? = null,    // e.g. destructive-write notice
     val token: String? = null,      // opaque signed token to echo on execute (absent for reject)
+    val steps: List<VozStep> = emptyList(), // internal reads run while deciding
+)
+
+// One read-only query the assistant ran by itself while building the proposal —
+// to find an exact name, see what data exists, or check its final query. These
+// need no approval (a read cannot modify data); they are shown as provenance.
+data class VozStep(
+    val sql: String,
+    val row_count: Int = 0,
+    val error: String? = null,
 )
 
 // ---- POST assistant/execute ----
