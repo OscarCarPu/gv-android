@@ -6,7 +6,6 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
     lateinit var tokenManager: TokenManager
@@ -18,9 +17,6 @@ object RetrofitClient {
 
     private val okHttpClient by lazy {
         OkHttpClient.Builder()
-            // LLM round-trips (Voz assistant) can exceed OkHttp's 10s default.
-            .readTimeout(60, TimeUnit.SECONDS)
-            .callTimeout(90, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val request = chain.request()
                 val path = request.url.encodedPath

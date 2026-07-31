@@ -28,24 +28,22 @@ import com.gv.app.ui.alarm.AlarmScreen
 import com.gv.app.ui.rutas.RutasScreen
 import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
-import com.gv.app.ui.voz.VozScreen
 
 private enum class OtrosTab(val label: String) {
-    VOZ("Voz"), ROUTES("Rutas"), ALARM("Alarma")
+    ROUTES("Rutas"), ALARM("Alarma")
 }
 
 /**
  * Groups the secondary features under one bottom-tab. Uses a plain `when` body
- * (not a pager) so leaving the Voz sub-tab disposes its SpeechRecognizer.
+ * (not a pager) so each sub-screen is disposed when you leave it.
  */
 @Composable
 fun OtrosScreen() {
-    var tab by rememberSaveable { mutableStateOf(OtrosTab.VOZ) }
+    var tab by rememberSaveable { mutableStateOf(OtrosTab.ROUTES) }
     Column(Modifier.fillMaxSize().background(GvColors.Bg)) {
         TabBar(selected = tab, onSelect = { tab = it })
         Box(Modifier.fillMaxSize()) {
             when (tab) {
-                OtrosTab.VOZ -> VozScreen()
                 OtrosTab.ROUTES -> RutasScreen()
                 OtrosTab.ALARM -> AlarmScreen()
             }
