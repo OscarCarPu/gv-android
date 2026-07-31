@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,9 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -57,7 +54,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gv.app.domain.model.VozKind
 import com.gv.app.domain.model.VozSuggestResponse
-import com.gv.app.domain.model.VozStep
 import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
 import com.gv.app.voice.SpeechToText
@@ -240,8 +236,6 @@ private fun SuggestionCard(
             Text(it, style = MaterialTheme.typography.labelMedium, color = GvColors.Warning)
         }
 
-        if (data.steps.isNotEmpty()) InternalStepsSection(data.steps)
-
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
             Button(
                 onClick = onApprove,
@@ -249,56 +243,6 @@ private fun SuggestionCard(
             ) { Text("Aprobar") }
             TextButton(onClick = onFeedback) {
                 Text("Dar feedback", color = GvColors.TextMuted)
-            }
-        }
-    }
-}
-
-/**
- * The read-only queries the assistant ran by itself before proposing. Collapsed
- * by default: it explains where the proposal came from, it isn't something the
- * user has to act on.
- */
-@Composable
-private fun InternalStepsSection(steps: List<VozStep>) {
-    val spacing = LocalSpacing.current
-    var expanded by remember { mutableStateOf(false) }
-    val label = if (steps.size == 1) "1 consulta interna" else "${steps.size} consultas internas"
-
-    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-        TextButton(
-            onClick = { expanded = !expanded },
-            contentPadding = PaddingValues(horizontal = 0.dp, vertical = spacing.xs),
-        ) {
-            Text(
-                text = if (expanded) "▾ $label" else "▸ $label",
-                style = MaterialTheme.typography.labelMedium,
-                color = GvColors.TextMuted,
-            )
-        }
-        if (expanded) {
-            steps.forEach { step ->
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(GvColors.Surface)
-                            .padding(spacing.md),
-                    ) {
-                        Text(
-                            step.sql,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            color = GvColors.TextMuted,
-                        )
-                    }
-                    val error = step.error?.takeIf { it.isNotBlank() }
-                    Text(
-                        text = error ?: "${step.row_count} fila(s)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (error != null) GvColors.Danger else GvColors.TextMuted,
-                    )
-                }
             }
         }
     }
