@@ -187,7 +187,7 @@ fun TasksScreen(vm: TasksViewModel = viewModel()) {
             onStart = { vm.startTask(task.id); vm.closeDetail() },
             onFinish = { vm.finishOrRenew(task.id, task.task_type, task.recurrence); vm.closeDetail() },
             onTimerStart = {
-                vm.startOrAssignTimer(task.id, task.name, null, task.task_type, task.recurrence, task.priority)
+                vm.startOrAssignTimer(task.id)
                 vm.closeDetail()
             },
             onAddTodo = vm::addTodo,
@@ -381,7 +381,7 @@ private fun TimerSheet(
     val spacing = LocalSpacing.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val active = timer.active ?: return
-    var comment by remember(active.outboxId) { mutableStateOf(active.comment.orEmpty()) }
+    var comment by remember(active.serverId) { mutableStateOf(active.comment.orEmpty()) }
     val startedAt = remember(active.startedAt) { parseIso(active.startedAt) ?: java.time.LocalDateTime.now() }
 
     LaunchedEffect(comment) {

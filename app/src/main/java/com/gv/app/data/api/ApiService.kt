@@ -8,6 +8,9 @@ import com.gv.app.domain.model.CreateTransactionRequest
 import com.gv.app.domain.model.HabitWithLog
 import com.gv.app.domain.model.LogHabitRequest
 import com.gv.app.domain.model.LogHabitResponse
+import com.gv.app.domain.model.LightCommandRequest
+import com.gv.app.domain.model.LightState
+import com.gv.app.domain.model.LightStatesResponse
 import com.gv.app.domain.model.LoginRequest
 import com.gv.app.domain.model.Overview
 import com.gv.app.domain.model.TokenResponse
@@ -222,4 +225,24 @@ interface ApiService {
 
     @DELETE("rutas/marks/{id}")
     suspend fun deleteMark(@Path("id") id: Int): Response<Unit>
+
+    // --- Domotics lights ---
+    // Served by gv-api like everything else; the BLE bridge sits behind it, not in front.
+
+    /** Every configured bulb's state. [force] skips the API's short read cache. */
+    @GET("domotics/lights/state")
+    suspend fun getLightStates(@Query("force") force: Int? = null): Response<LightStatesResponse>
+
+    @GET("domotics/lights/{id}")
+    suspend fun getLightState(
+        @Path("id") id: String,
+        @Query("force") force: Int? = null,
+    ): Response<LightState>
+
+    /** Apply one command; the response is the bulb's resulting state. */
+    @POST("domotics/lights/{id}")
+    suspend fun sendLightCommand(
+        @Path("id") id: String,
+        @Body command: LightCommandRequest,
+    ): Response<LightState>
 }

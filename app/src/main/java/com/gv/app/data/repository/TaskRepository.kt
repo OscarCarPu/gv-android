@@ -1,25 +1,14 @@
 package com.gv.app.data.repository
 
-import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.gv.app.data.api.ApiService
 import com.gv.app.data.api.PatchBody
 import com.gv.app.data.local.db.ActiveTimerEntity
 import com.gv.app.data.local.db.GvDatabase
-import com.gv.app.data.local.db.OutboxMutation
-import com.gv.app.data.local.db.OutboxMutation.Companion.OP_CREATE
-import com.gv.app.data.local.db.OutboxMutation.Companion.OP_DELETE
-import com.gv.app.data.local.db.OutboxMutation.Companion.OP_UPDATE
-import com.gv.app.data.local.db.OutboxMutation.Companion.TMP_PREFIX
 import com.gv.app.data.local.db.TaskDao
 import com.gv.app.data.local.db.TasksSnapshotEntity
 import com.gv.app.data.sync.CacheRefresher
-import com.gv.app.data.sync.Outbox
-import com.gv.app.data.sync.OutboxHandler
-import com.gv.app.data.sync.SyncOutcome
-import com.gv.app.data.sync.SyncScheduler
-import com.gv.app.data.sync.toSyncOutcome
 import com.gv.app.domain.model.ActiveTimeEntryResponse
 import com.gv.app.domain.model.ActiveTimer
 import com.gv.app.domain.model.ActiveTreeNode
@@ -34,8 +23,8 @@ import com.gv.app.domain.model.TimeEntrySummaryResponse
 import com.gv.app.domain.model.TimeEntryWithTaskResponse
 import com.gv.app.domain.model.TodoResponse
 import com.gv.app.domain.model.UpdateTodoRequest
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
@@ -43,7 +32,6 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.UUID
 
 /** Read model for the Tasks screen, reconstructed from the cached snapshot. */
 data class TasksData(
@@ -55,23 +43,25 @@ data class TasksData(
 )
 
 /**
- * Offline-first tasks store.
+ * Tasks store. Online-first, offline read-only.
  *
- * Reads: the screen collects [tasksData] from a cached JSON snapshot (instant, works offline)
- * while [refresh] reconciles in the background. The running timer is a structured cached row so
- * it can be started/stopped fully offline — the create is queued with a `tmp_` id and the real
- * server id is remapped onto the queue + cache once it syncs (handling create non-idempotency).
- * Task field/CRUD mutations are queued through the outbox and reconcile the snapshot on sync;
- * the task-detail drill-in and todos are direct calls (network-dependent by design).
+ * Reads render from a cached JSON snapshot so the screen paints instantly and still shows
+ * something with no connection. Every write goes straight to the server and then re-reads
+ * the affected state — the client never guesses what the server did with it.
+ *
+ * The running timer is the part this changed most. It used to be startable offline with a
+ * `tmp_` id that got remapped once the create synced; now a timer only exists once the server
+ * has issued its id, so [ActiveTimerEntity.serverId] is always real and stop/assign can simply
+ * target it. That removes the whole class of bugs where a timer existed locally under an id
+ * nothing else agreed with.
  */
 class TaskRepository(
     private val api: ApiService,
     private val db: GvDatabase,
     private val dao: TaskDao,
-    private val outbox: Outbox,
-    private val sync: SyncScheduler,
+    private val gate: OnlineGate,
     private val gson: Gson = Gson(),
-) : OutboxHandler, CacheRefresher {
+) : CacheRefresher {
 
     fun tasksData(): Flow<TasksData?> = dao.snapshot().map { it?.toData() }
 
@@ -116,11 +106,8 @@ class TaskRepository(
         ApiResult.Failure(e.message ?: "Network error")
     }
 
+    /** Pull the authoritative running timer. The server is the only source now. */
     private suspend fun refreshTimer() {
-        // Don't clobber a locally-started timer whose create hasn't synced yet, nor one with any
-        // queued mutation (e.g. an in-flight comment/assign/stop) — that would resurrect stale state.
-        val local = dao.activeTimerOnce()
-        if (local != null && (local.serverId == null || outbox.hasPending(ENTITY_TIME_ENTRY, local.outboxId))) return
         try {
             val resp = api.getActiveTimeEntry()
             if (resp.isSuccessful) {
@@ -130,98 +117,85 @@ class TaskRepository(
                 dao.clearTimer()
             }
         } catch (_: Exception) {
-            // Network blip: keep the cached timer.
+            // Network blip: keep the cached timer rather than blanking a running one.
         }
     }
 
-    // ----- Timer (fully offline-capable) -----
+    // ----- Timer -----
 
-    suspend fun startOrAssignTimer(
-        taskId: Int,
-        taskName: String,
-        projectName: String?,
-        taskType: String?,
-        recurrence: Int?,
-        priority: Int?,
-    ) {
+    /** Start a timer on [taskId], or re-point the running one at it. */
+    suspend fun startOrAssignTimer(taskId: Int): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
         val existing = dao.activeTimerOnce()
-        val now = nowIsoUtc()
-        db.withTransaction {
-            if (existing == null) {
-                val tmp = TMP_PREFIX + UUID.randomUUID()
-                dao.upsertTimer(
-                    ActiveTimerEntity(
-                        outboxId = tmp, serverId = null, taskId = taskId, taskName = taskName,
-                        projectName = projectName, taskType = taskType, recurrence = recurrence,
-                        priority = priority, startedAt = now, comment = null,
+        val result = if (existing == null) {
+            safeApiCall {
+                api.createTimeEntry(
+                    CreateTimeEntryRequest(
+                        task_id = taskId,
+                        started_at = nowIsoUtc(),
+                        finished_at = null,
+                        comment = null,
                     ),
                 )
-                outbox.enqueueCreate(
-                    ENTITY_TIME_ENTRY, tmp,
-                    gson.toJson(CreateTimeEntryRequest(task_id = taskId, started_at = now, finished_at = null, comment = null)),
+            }.map { }
+        } else {
+            safeApiCall {
+                api.updateTimeEntryBody(
+                    existing.serverId,
+                    PatchBody.create().put("task_id", taskId).toRequestBody(),
                 )
-            } else {
-                dao.upsertTimer(
-                    existing.copy(
-                        taskId = taskId, taskName = taskName, projectName = projectName,
-                        taskType = taskType, recurrence = recurrence, priority = priority,
-                    ),
-                )
-                outbox.enqueueUpdate(
-                    ENTITY_TIME_ENTRY, existing.outboxId,
-                    PatchBody.create().put("task_id", taskId).toJsonString(),
-                )
-            }
+            }.map { }
         }
-        sync.requestFlush()
+        return result.thenRefreshTimer()
     }
 
-    suspend fun stopTimer(comment: String?) {
-        val active = dao.activeTimerOnce() ?: return
+    suspend fun stopTimer(comment: String?): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        val active = dao.activeTimerOnce() ?: return ApiResult.Success(Unit)
         val patch = PatchBody.create().put("finished_at", nowIsoUtc())
         if (!comment.isNullOrBlank()) patch.put("comment", comment)
-        db.withTransaction {
-            dao.clearTimer()
-            outbox.enqueueUpdate(ENTITY_TIME_ENTRY, active.outboxId, patch.toJsonString())
-        }
-        sync.requestFlush()
-        // NB: no immediate reconcile() — the stop is only queued, so re-fetching the active
-        // entry now would resurrect the just-stopped timer. The handler reconciles after sync.
+        return safeApiCall { api.updateTimeEntryBody(active.serverId, patch.toRequestBody()) }
+            .map { }
+            .thenRefreshTimer()
     }
 
-    suspend fun cancelTimer() {
-        val active = dao.activeTimerOnce() ?: return
-        db.withTransaction {
-            dao.clearTimer()
-            outbox.enqueueDelete(ENTITY_TIME_ENTRY, active.outboxId)
-        }
-        sync.requestFlush()
+    suspend fun cancelTimer(): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        val active = dao.activeTimerOnce() ?: return ApiResult.Success(Unit)
+        return safeApiCallNoBody { api.deleteTimeEntry(active.serverId) }.thenRefreshTimer()
     }
 
-    suspend fun updateTimerComment(comment: String) {
-        val active = dao.activeTimerOnce() ?: return
-        db.withTransaction {
-            dao.upsertTimer(active.copy(comment = comment.ifBlank { null }))
-            outbox.enqueueUpdate(
-                ENTITY_TIME_ENTRY, active.outboxId,
-                PatchBody.create().putOrNull("comment", comment.ifBlank { null }).toJsonString(),
-            )
-        }
-        sync.requestFlush()
+    suspend fun updateTimerComment(comment: String): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        val active = dao.activeTimerOnce() ?: return ApiResult.Success(Unit)
+        val patch = PatchBody.create().putOrNull("comment", comment.ifBlank { null })
+        return safeApiCall { api.updateTimeEntryBody(active.serverId, patch.toRequestBody()) }
+            .map { }
+            .thenRefreshTimer()
     }
 
-    // ----- Task mutations (queued) -----
+    /** Change the running timer's start time (elapsed recomputes from the server's value). */
+    suspend fun editActiveTimerStart(startedAtIso: String): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        val active = dao.activeTimerOnce() ?: return ApiResult.Success(Unit)
+        val patch = PatchBody.create().put("started_at", startedAtIso)
+        return safeApiCall { api.updateTimeEntryBody(active.serverId, patch.toRequestBody()) }
+            .map { }
+            .thenRefreshTimer()
+    }
 
-    suspend fun startTask(taskId: Int) =
-        enqueueTaskUpdate(taskId, PatchBody.create().put("started_at", nowIsoUtc()))
+    // ----- Task mutations -----
 
-    suspend fun finishOrRenew(taskId: Int, taskType: String?, recurrence: Int?) {
+    suspend fun startTask(taskId: Int): ApiResult<Unit> =
+        patchTask(taskId, PatchBody.create().put("started_at", nowIsoUtc()))
+
+    suspend fun finishOrRenew(taskId: Int, taskType: String?, recurrence: Int?): ApiResult<Unit> {
         val patch = if (taskType == "recurring" && recurrence != null) {
             PatchBody.create().put("due_at", buildRecurringDueAt(recurrence))
         } else {
             PatchBody.create().put("finished_at", nowIsoUtc())
         }
-        enqueueTaskUpdate(taskId, patch)
+        return patchTask(taskId, patch)
     }
 
     suspend fun updateTaskDetail(
@@ -232,36 +206,46 @@ class TaskRepository(
         taskType: String,
         recurrence: Int?,
         priority: Int,
-    ) {
+    ): ApiResult<Unit> {
         val patch = PatchBody.create()
             .put("name", name)
             .putOrNull("description", description)
             .putOrNull("due_at", dueAt)
             .put("task_type", taskType)
             .put("priority", priority)
-        if (taskType == "recurring" && recurrence != null) patch.put("recurrence", recurrence) else patch.putNull("recurrence")
-        enqueueTaskUpdate(id, patch)
-    }
-
-    private suspend fun enqueueTaskUpdate(id: Int, patch: PatchBody) {
-        outbox.enqueueUpdate(ENTITY_TASK, id.toString(), patch.toJsonString())
-        sync.requestFlush()
-    }
-
-    suspend fun createTask(req: CreateTaskRequest, startNow: Boolean) {
-        val tmp = TMP_PREFIX + UUID.randomUUID()
-        db.withTransaction {
-            outbox.enqueueCreate(ENTITY_TASK, tmp, gson.toJson(req))
-            if (startNow) {
-                outbox.enqueueUpdate(ENTITY_TASK, tmp, PatchBody.create().put("started_at", nowIsoUtc()).toJsonString())
-            }
+        if (taskType == "recurring" && recurrence != null) {
+            patch.put("recurrence", recurrence)
+        } else {
+            patch.putNull("recurrence")
         }
-        sync.requestFlush()
+        return patchTask(id, patch)
     }
 
-    suspend fun deleteTask(id: Int) {
-        outbox.enqueueDelete(ENTITY_TASK, id.toString())
-        sync.requestFlush()
+    private suspend fun patchTask(id: Int, patch: PatchBody): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCall { api.updateTaskBody(id, patch.toRequestBody()) }.map { }.thenReconcile()
+    }
+
+    suspend fun createTask(req: CreateTaskRequest, startNow: Boolean): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        val created = safeApiCall { api.createTask(req) }
+        if (created is ApiResult.Failure) return created
+        val id = (created as ApiResult.Success).data.id
+        if (startNow) {
+            // Best-effort: the task exists either way, so a failure here must not read as
+            // "create failed" — reconcile will show it unstarted.
+            runCatching { api.updateTaskBody(id, PatchBody.create().put("started_at", nowIsoUtc()).toRequestBody()) }
+        }
+        return reconcile()
+    }
+
+    suspend fun deleteTask(id: Int): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return when (val r = safeApiCallNoBody { api.deleteTask(id) }) {
+            is ApiResult.Success -> reconcile()
+            // Already gone is the outcome the caller wanted.
+            is ApiResult.Failure -> if (r.code == 404) reconcile() else r
+        }
     }
 
     // ----- Time-entry editing / agenda -----
@@ -270,47 +254,45 @@ class TaskRepository(
     suspend fun loadDayEntries(date: LocalDate): ApiResult<List<TimeEntryWithTaskResponse>> =
         safeApiCall { api.listTimeEntries(date.toString(), date.toString()) }
 
-    /** Change the running timer's start; updates the cache (elapsed recomputes) + queues sync. */
-    suspend fun editActiveTimerStart(startedAtIso: String) {
-        val active = dao.activeTimerOnce() ?: return
-        db.withTransaction {
-            dao.upsertTimer(active.copy(startedAt = startedAtIso))
-            outbox.enqueueUpdate(
-                ENTITY_TIME_ENTRY, active.outboxId,
-                PatchBody.create().put("started_at", startedAtIso).toJsonString(),
+    /** Log a past entry spanning [startedAtIso]..[finishedAtIso]. */
+    suspend fun createPastEntry(
+        taskId: Int,
+        startedAtIso: String,
+        finishedAtIso: String,
+        comment: String?,
+    ): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCall {
+            api.createTimeEntry(
+                CreateTimeEntryRequest(taskId, startedAtIso, finishedAtIso, comment?.ifBlank { null }),
             )
-        }
-        sync.requestFlush()
+        }.map { }
     }
 
-    /** Log a past entry spanning [startedAtIso]..[finishedAtIso] (offline-capable). */
-    suspend fun createPastEntry(taskId: Int, startedAtIso: String, finishedAtIso: String, comment: String?) {
-        val tmp = TMP_PREFIX + UUID.randomUUID()
-        outbox.enqueueCreate(
-            ENTITY_TIME_ENTRY, tmp,
-            gson.toJson(CreateTimeEntryRequest(taskId, startedAtIso, finishedAtIso, comment?.ifBlank { null })),
-        )
-        sync.requestFlush()
-    }
-
-    /** Edit an existing (real-id) time entry: reassign task and/or change start/end/comment. */
-    suspend fun editEntry(id: Int, taskId: Int?, startedAtIso: String?, finishedAtIso: String?, comment: String?) {
+    /** Edit an existing time entry: reassign task and/or change start/end/comment. */
+    suspend fun editEntry(
+        id: Int,
+        taskId: Int?,
+        startedAtIso: String?,
+        finishedAtIso: String?,
+        comment: String?,
+    ): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
         val patch = PatchBody.create()
         taskId?.let { patch.put("task_id", it) }
         startedAtIso?.let { patch.put("started_at", it) }
         finishedAtIso?.let { patch.put("finished_at", it) }
         comment?.let { patch.putOrNull("comment", it.ifBlank { null }) }
-        if (patch.isEmpty()) return
-        outbox.enqueueUpdate(ENTITY_TIME_ENTRY, id.toString(), patch.toJsonString())
-        sync.requestFlush()
+        if (patch.isEmpty()) return ApiResult.Success(Unit)
+        return safeApiCall { api.updateTimeEntryBody(id, patch.toRequestBody()) }.map { }
     }
 
-    suspend fun deleteEntry(id: Int) {
-        outbox.enqueueDelete(ENTITY_TIME_ENTRY, id.toString())
-        sync.requestFlush()
+    suspend fun deleteEntry(id: Int): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCallNoBody { api.deleteTimeEntry(id) }
     }
 
-    /** Task picker options derived from the cached snapshot (works offline). */
+    /** Task picker options derived from the cached snapshot (so the picker works offline). */
     suspend fun taskOptions(): List<TaskOption> {
         val data = dao.snapshotOnce()?.toData() ?: return emptyList()
         val opts = LinkedHashMap<Int, TaskOption>()
@@ -328,130 +310,49 @@ class TaskRepository(
         return opts.values.sortedBy { it.name.lowercase() }
     }
 
-    // ----- Task detail + todos (direct / network-dependent) -----
+    // ----- Task detail + todos -----
 
     suspend fun loadTaskDetail(id: Int): ApiResult<TaskFullResponse> = safeApiCall { api.getTask(id) }
 
-    suspend fun addTodo(taskId: Int, name: String): ApiResult<TodoResponse> =
-        safeApiCall { api.createTodo(com.gv.app.domain.model.CreateTodoRequest(taskId, name.trim())) }
-
-    suspend fun toggleTodo(todoId: Int, isDone: Boolean): ApiResult<TodoResponse> =
-        safeApiCall { api.updateTodo(todoId, UpdateTodoRequest(name = null, is_done = isDone)) }
-
-    suspend fun deleteTodo(todoId: Int): ApiResult<Unit> = safeApiCallNoBody { api.deleteTodo(todoId) }
-
-    // ----- OutboxHandler -----
-
-    override val entityTypes: Set<String> = setOf(ENTITY_TASK, ENTITY_TIME_ENTRY)
-
-    override suspend fun sync(api: ApiService, mutation: OutboxMutation): SyncOutcome =
-        when (mutation.entityType) {
-            ENTITY_TIME_ENTRY -> syncTimeEntry(api, mutation)
-            ENTITY_TASK -> syncTask(api, mutation)
-            else -> SyncOutcome.DeadLetter("Unhandled type ${mutation.entityType}")
-        }
-
-    private suspend fun syncTimeEntry(api: ApiService, m: OutboxMutation): SyncOutcome =
-        when (m.operation) {
-            OP_CREATE -> {
-                val req = gson.fromJson(m.payloadJson, CreateTimeEntryRequest::class.java)
-                // Idempotency guard: a prior attempt may have committed before its response was
-                // lost (WorkManager is at-least-once). On a retry, adopt the existing open entry
-                // for this task instead of POSTing a duplicate. Only for active-timer starts
-                // (finished_at == null) — a past entry (start..end) must never adopt the running timer.
-                val adoptId = if (m.retryCount > 0 && req.finished_at == null) openEntryIdForTask(req.task_id) else null
-                if (adoptId != null) {
-                    adoptTimeEntry(m.entityId, adoptId)
-                    SyncOutcome.Synced
-                } else when (val r = safeApiCall { api.createTimeEntry(req) }) {
-                    is ApiResult.Success -> {
-                        adoptTimeEntry(m.entityId, r.data.id)
-                        SyncOutcome.Synced
-                    }
-                    is ApiResult.Failure -> r.toSyncOutcome()
-                }
-            }
-            OP_UPDATE -> {
-                val id = m.entityId.toIntOrNull()
-                    ?: return SyncOutcome.DeadLetter("Time entry never created (${m.entityId})")
-                when (val r = safeApiCall { api.updateTimeEntryBody(id, PatchBody.bodyFromJson(m.payloadJson)) }) {
-                    is ApiResult.Success -> {
-                        // Stop/assign/comment landed: reconcile summary + active-timer truth.
-                        runCatching { reconcile() }
-                        SyncOutcome.Synced
-                    }
-                    is ApiResult.Failure -> if (r.code == 404) SyncOutcome.Synced else r.toSyncOutcome()
-                }
-            }
-            OP_DELETE -> {
-                val id = m.entityId.toIntOrNull() ?: return SyncOutcome.Synced
-                when (val r = safeApiCallNoBody { api.deleteTimeEntry(id) }) {
-                    is ApiResult.Success -> {
-                        runCatching { reconcile() }
-                        SyncOutcome.Synced
-                    }
-                    is ApiResult.Failure -> if (r.code == 404) SyncOutcome.Synced else r.toSyncOutcome()
-                }
-            }
-            else -> SyncOutcome.DeadLetter("Bad op ${m.operation}")
-        }
-
-    /** The server's currently-open time entry id for [taskId], if any (idempotency adoption). */
-    private suspend fun openEntryIdForTask(taskId: Int): Int? {
-        val resp = runCatching { api.getActiveTimeEntry() }.getOrNull() ?: return null
-        if (!resp.isSuccessful) return null
-        val body = resp.body() ?: return null
-        return if (body.task_id == taskId && body.finished_at == null) body.id else null
+    suspend fun addTodo(taskId: Int, name: String): ApiResult<TodoResponse> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCall { api.createTodo(com.gv.app.domain.model.CreateTodoRequest(taskId, name.trim())) }
     }
 
-    /** Remap queued follow-ups (stop/assign) + the cached timer from the tmp id to the real id. */
-    private suspend fun adoptTimeEntry(tmpEntityId: String, realId: Int) {
-        outbox.remapCreatedId(ENTITY_TIME_ENTRY, tmpEntityId, realId.toString())
-        dao.activeTimerOnce()?.let { local ->
-            if (local.outboxId == tmpEntityId) {
-                dao.upsertTimer(local.copy(outboxId = realId.toString(), serverId = realId))
-            }
-        }
+    suspend fun toggleTodo(todoId: Int, isDone: Boolean): ApiResult<TodoResponse> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCall { api.updateTodo(todoId, UpdateTodoRequest(name = null, is_done = isDone)) }
     }
 
-    private suspend fun syncTask(api: ApiService, m: OutboxMutation): SyncOutcome {
-        val outcome = when (m.operation) {
-            OP_CREATE -> {
-                val req = gson.fromJson(m.payloadJson, CreateTaskRequest::class.java)
-                when (val r = safeApiCall { api.createTask(req) }) {
-                    is ApiResult.Success -> {
-                        outbox.remapCreatedId(ENTITY_TASK, m.entityId, r.data.id.toString())
-                        SyncOutcome.Synced
-                    }
-                    is ApiResult.Failure -> r.toSyncOutcome()
-                }
-            }
-            OP_UPDATE -> {
-                val id = m.entityId.toIntOrNull()
-                    ?: return SyncOutcome.DeadLetter("Task never created (${m.entityId})")
-                when (val r = safeApiCall { api.updateTaskBody(id, PatchBody.bodyFromJson(m.payloadJson)) }) {
-                    is ApiResult.Success -> SyncOutcome.Synced
-                    is ApiResult.Failure -> if (r.code == 404) SyncOutcome.Synced else r.toSyncOutcome()
-                }
-            }
-            OP_DELETE -> {
-                val id = m.entityId.toIntOrNull() ?: return SyncOutcome.Synced
-                when (val r = safeApiCallNoBody { api.deleteTask(id) }) {
-                    is ApiResult.Success -> SyncOutcome.Synced
-                    is ApiResult.Failure -> if (r.code == 404) SyncOutcome.Synced else r.toSyncOutcome()
-                }
-            }
-            else -> SyncOutcome.DeadLetter("Bad op ${m.operation}")
-        }
-        // Reconcile the list/tree/summary once the change lands server-side.
-        if (outcome is SyncOutcome.Synced) runCatching { reconcile() }
-        return outcome
+    suspend fun deleteTodo(todoId: Int): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCallNoBody { api.deleteTodo(todoId) }
     }
 
     // ----- CacheRefresher -----
 
     override suspend fun refresh() {
         runCatching { reconcile() }
+    }
+
+    // ----- helpers -----
+
+    /** Map a success's payload while carrying failures through untouched. */
+    private inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
+        is ApiResult.Success -> ApiResult.Success(transform(data))
+        is ApiResult.Failure -> this
+    }
+
+    /** On success, re-read the timer so the cache reflects the server. */
+    private suspend fun ApiResult<Unit>.thenRefreshTimer(): ApiResult<Unit> {
+        if (this is ApiResult.Success) refreshTimer()
+        return this
+    }
+
+    /** On success, re-read the whole snapshot so lists reflect the server. */
+    private suspend fun ApiResult<Unit>.thenReconcile(): ApiResult<Unit> {
+        if (this is ApiResult.Success) reconcile()
+        return this
     }
 
     // ----- mapping -----
@@ -465,21 +366,18 @@ class TaskRepository(
     )
 
     private fun ActiveTimerEntity.toDomain() = ActiveTimer(
-        outboxId = outboxId, serverId = serverId, taskId = taskId, taskName = taskName,
+        serverId = serverId, taskId = taskId, taskName = taskName,
         projectName = projectName, taskType = taskType, recurrence = recurrence,
         priority = priority, startedAt = startedAt, comment = comment,
     )
 
     private fun ActiveTimeEntryResponse.toEntity() = ActiveTimerEntity(
-        outboxId = id.toString(), serverId = id, taskId = task_id, taskName = task_name,
+        serverId = id, taskId = task_id, taskName = task_name,
         projectName = project_name, taskType = task_type, recurrence = recurrence,
         priority = priority, startedAt = started_at, comment = comment,
     )
 
     companion object {
-        const val ENTITY_TASK = "task"
-        const val ENTITY_TIME_ENTRY = "time_entry"
-
         private val dueListType = object : TypeToken<List<TaskByDueDateResponse>>() {}.type
         private val treeListType = object : TypeToken<List<ActiveTreeNode>>() {}.type
         private val projectsListType = object : TypeToken<List<ProjectListItem>>() {}.type

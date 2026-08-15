@@ -223,12 +223,11 @@ data class ProjectListItem(
 )
 
 /**
- * UI model for the running timer. Works whether or not the underlying time entry has reached
- * the server yet ([serverId] is null until synced); the screen ticks elapsed from [startedAt].
+ * UI model for the running timer. Backed by a real server-side time entry ([serverId]); the
+ * screen ticks elapsed from [startedAt].
  */
 data class ActiveTimer(
-    val outboxId: String,
-    val serverId: Int?,
+    val serverId: Int,
     val taskId: Int,
     val taskName: String,
     val projectName: String?,

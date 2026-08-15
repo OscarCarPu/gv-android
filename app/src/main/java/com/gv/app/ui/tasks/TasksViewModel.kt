@@ -97,29 +97,32 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
 
     // ----- Timer -----
 
-    fun startOrAssignTimer(
-        taskId: Int,
-        taskName: String,
-        projectName: String?,
-        taskType: String?,
-        recurrence: Int?,
-        priority: Int?,
-    ) {
-        viewModelScope.launch {
-            repo.startOrAssignTimer(taskId, taskName, projectName, taskType, recurrence, priority)
-        }
+    /**
+     * Only the task id is needed now: the server creates the entry and hands back its name,
+     * project and type, so the caller no longer has to pass what it thinks those are.
+     */
+    fun startOrAssignTimer(taskId: Int) {
+        viewModelScope.launch { report(repo.startOrAssignTimer(taskId)) }
     }
 
     fun stopTimer(comment: String?) {
-        viewModelScope.launch { repo.stopTimer(comment) }
+        viewModelScope.launch { report(repo.stopTimer(comment)) }
     }
 
     fun cancelTimer() {
-        viewModelScope.launch { repo.cancelTimer() }
+        viewModelScope.launch { report(repo.cancelTimer()) }
     }
 
     fun updateTimerComment(comment: String) {
-        viewModelScope.launch { repo.updateTimerComment(comment) }
+        viewModelScope.launch { report(repo.updateTimerComment(comment)) }
+    }
+
+    /**
+     * Surfaces a write's failure. Offline refusals land here too: the banner explains the
+     * state, but a button that silently does nothing reads as a bug, so it gets said out loud.
+     */
+    private suspend fun report(result: ApiResult<*>) {
+        if (result is ApiResult.Failure) _toast.emit(result.message)
     }
 
     // ----- Task mutations -----

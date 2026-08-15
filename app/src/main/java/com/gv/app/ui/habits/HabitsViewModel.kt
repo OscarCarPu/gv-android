@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /**
- * Offline-first: each day's list is collected from the Room cache (instant, works offline) and
- * reconciled by a background fetch when that day is selected. Logging writes through the
- * repository, which commits locally and queues the sync — so taps never block on the network.
+ * Online-first: each day's list is collected from the Room cache (so it paints instantly and
+ * still reads offline) and reconciled by a fetch when that day is selected. Logging writes
+ * straight through to the server; offline it is refused, and the repository's failure message
+ * is what the toast shows.
  */
 class HabitsViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -69,14 +70,22 @@ class HabitsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onAdjust(habitId: Int, delta: Double) {
-        viewModelScope.launch { repo.adjustHabit(habitId, _selectedDate.value, delta) }
+        viewModelScope.launch { report(repo.adjustHabit(habitId, _selectedDate.value, delta)) }
     }
 
     fun onSetValue(habitId: Int, value: Double) {
-        viewModelScope.launch { repo.setHabit(habitId, _selectedDate.value, value) }
+        viewModelScope.launch { report(repo.setHabit(habitId, _selectedDate.value, value)) }
     }
 
     fun onDelete(habitId: Int) {
-        viewModelScope.launch { repo.deleteHabit(habitId) }
+        viewModelScope.launch { report(repo.deleteHabit(habitId)) }
+    }
+
+    /**
+     * Writes are the one place the offline refusal must be spoken aloud: the banner explains
+     * the state, but a tap that quietly does nothing reads as a bug.
+     */
+    private suspend fun report(result: ApiResult<*>) {
+        if (result is ApiResult.Failure) _toast.emit(result.message)
     }
 }

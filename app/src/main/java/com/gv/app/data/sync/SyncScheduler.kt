@@ -1,7 +1,6 @@
 package com.gv.app.data.sync
 
 import android.content.Context
-import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -11,7 +10,13 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
-/** Enqueues the sync Workers with the right constraints, backoff, and de-duplication. */
+/**
+ * Schedules cache warm-ups.
+ *
+ * Only refreshes live here. There is no write queue to flush: the app writes straight to the
+ * server when online and refuses the write when not (see
+ * [com.gv.app.data.repository.OnlineGate]), so nothing is ever pending locally.
+ */
 class SyncScheduler(context: Context) {
 
     private val workManager = WorkManager.getInstance(context.applicationContext)
@@ -19,19 +24,6 @@ class SyncScheduler(context: Context) {
     private val connected = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
-
-    /** Flush pending writes as soon as there's a connection. Coalesces with any in-flight flush. */
-    fun requestFlush() {
-        val request = OneTimeWorkRequestBuilder<OutboxFlushWorker>()
-            .setConstraints(connected)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, INITIAL_BACKOFF_SECONDS, TimeUnit.SECONDS)
-            .build()
-        workManager.enqueueUniqueWork(
-            OutboxFlushWorker.UNIQUE_NAME,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
-            request,
-        )
-    }
 
     /** One-shot cache refresh (app foreground / reconnect). Drops if one is already queued. */
     fun requestRefreshNow() {
@@ -54,9 +46,5 @@ class SyncScheduler(context: Context) {
             ExistingPeriodicWorkPolicy.KEEP,
             request,
         )
-    }
-
-    private companion object {
-        const val INITIAL_BACKOFF_SECONDS = 5L
     }
 }

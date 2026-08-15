@@ -1,35 +1,43 @@
 package com.gv.app.data.repository
 
-import com.gv.app.data.sync.SyncOutcome
-import com.gv.app.data.sync.toSyncOutcome
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * These used to assert the outbox's retry/dead-letter classification. With no write queue
+ * there is nothing to retry, so what matters instead is that an offline refusal is
+ * distinguishable from a real server error — the UI phrases them differently.
+ */
 class ApiResultTest {
 
     @Test
-    fun `4xx is a client error and dead-letters`() {
+    fun `offline refusal is flagged and carries the standard message`() {
+        val failure = ApiResult.offline()
+        assertTrue(failure.offline)
+        assertEquals(ApiResult.OFFLINE_MESSAGE, failure.message)
+        assertEquals(null, failure.code)
+    }
+
+    @Test
+    fun `a server error is not an offline refusal`() {
         val failure = ApiResult.Failure("bad", code = 422)
-        assertTrue(failure.isClientError)
-        assertFalse(failure.isTransient)
-        assertTrue(failure.toSyncOutcome() is SyncOutcome.DeadLetter)
+        assertFalse(failure.offline)
+        assertEquals(422, failure.code)
     }
 
     @Test
-    fun `no status code is transient and retries`() {
-        val failure = ApiResult.Failure("network", code = null)
-        assertFalse(failure.isClientError)
-        assertTrue(failure.isTransient)
-        assertEquals(SyncOutcome.Retry, failure.toSyncOutcome())
+    fun `a network error without a status is still not an offline refusal`() {
+        // The gate reports "offline"; an unreachable-but-connected server reports the failure
+        // verbatim. Conflating them would tell the user to check a connection they have.
+        val failure = ApiResult.Failure("timeout", code = null)
+        assertFalse(failure.offline)
     }
 
     @Test
-    fun `5xx is transient and retries`() {
-        val failure = ApiResult.Failure("server", code = 503)
-        assertFalse(failure.isClientError)
-        assertTrue(failure.isTransient)
-        assertEquals(SyncOutcome.Retry, failure.toSyncOutcome())
+    fun `success is success`() {
+        assertTrue(ApiResult.Success(42).isSuccess)
+        assertFalse(ApiResult.Failure("nope").isSuccess)
     }
 }

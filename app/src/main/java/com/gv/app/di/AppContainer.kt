@@ -3,17 +3,17 @@ package com.gv.app.di
 import android.content.Context
 import com.gv.app.data.api.ApiService
 import com.gv.app.data.api.RetrofitClient
+import com.gv.app.data.auth.AutoLogin
 import com.gv.app.data.local.ThemeStore
 import com.gv.app.data.local.TokenManager
 import com.gv.app.data.local.db.GvDatabase
-import com.gv.app.data.local.db.OutboxMutation
 import com.gv.app.data.repository.HabitRepository
+import com.gv.app.data.repository.LightsRepository
+import com.gv.app.data.repository.OnlineGate
 import com.gv.app.data.repository.RutasRepository
 import com.gv.app.data.repository.TaskRepository
 import com.gv.app.data.sync.CacheRefresher
 import com.gv.app.data.sync.ConnectivityObserver
-import com.gv.app.data.sync.Outbox
-import com.gv.app.data.sync.OutboxHandler
 import com.gv.app.data.sync.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,16 +23,16 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Manual dependency-injection container, owned by [com.gv.app.GvApp] for the app's lifetime.
  *
- * The single seam through which screens obtain repositories, and through which the offline
- * stack (Room cache, outbox, connectivity, background sync) is assembled. Repositories are
- * added per feature phase; each registers itself as an [OutboxHandler] and/or [CacheRefresher]
- * here so the sync Workers stay domain-agnostic. Kept deliberately manual (no Hilt/Koin).
+ * The single seam through which screens obtain repositories. The app is **online-first,
+ * offline read-only**: repositories call the server directly and Room is only a read cache,
+ * so what lives here is a connectivity observer, an [OnlineGate] that every write consults,
+ * and a periodic cache warm-up. Kept deliberately manual (no Hilt/Koin).
  */
 class AppContainer(context: Context) {
 
     private val appContext: Context = context.applicationContext
 
-    /** Long-lived scope for app-level collectors (connectivity → flush). */
+    /** Long-lived scope for app-level collectors. */
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val tokenManager: TokenManager = TokenManager(appContext)
@@ -44,42 +44,42 @@ class AppContainer(context: Context) {
 
     val database: GvDatabase = GvDatabase.get(appContext)
 
-    val outbox: Outbox = Outbox(database.outboxDao())
-
     val connectivityObserver: ConnectivityObserver = ConnectivityObserver(appContext)
+
+    val onlineGate: OnlineGate = OnlineGate(connectivityObserver)
 
     val syncScheduler: SyncScheduler = SyncScheduler(appContext)
 
-    // --- Repositories register here as they are introduced (habits, tasks, rutas) ---
+    /** Signs in from build-time credentials; inert when they are absent. */
+    val autoLogin: AutoLogin = AutoLogin(apiService, tokenManager)
+
+    // --- Repositories ---
 
     val habitRepository: HabitRepository =
-        HabitRepository(apiService, database, database.habitDao(), outbox, syncScheduler)
+        HabitRepository(apiService, database, database.habitDao(), onlineGate)
 
     val taskRepository: TaskRepository =
-        TaskRepository(apiService, database, database.taskDao(), outbox, syncScheduler)
+        TaskRepository(apiService, database, database.taskDao(), onlineGate)
 
     val rutasRepository: RutasRepository =
-        RutasRepository(apiService, database, database.rutasDao(), outbox, syncScheduler)
+        RutasRepository(apiService, database, database.rutasDao(), onlineGate)
 
+    /** Lights hold no cache: a stale bulb state is worse than none, so reads are always live. */
+    val lightsRepository: LightsRepository =
+        LightsRepository(apiService, onlineGate)
+
+    // Lights are absent on purpose: they keep no cache, so there is nothing to warm up.
     private val repositories: List<Any> = listOf(
         habitRepository,
         taskRepository,
         rutasRepository,
     )
 
-    /** entityType → handler that knows how to replay/reconcile that mutation. */
-    val outboxHandlers: Map<String, OutboxHandler> =
-        repositories.filterIsInstance<OutboxHandler>()
-            .flatMap { handler -> handler.entityTypes.map { it to handler } }
-            .toMap()
-
     val cacheRefreshers: List<CacheRefresher> = repositories.filterIsInstance<CacheRefresher>()
 
-    // --- Sync status surfaced to the UI (offline / syncing / sync-error chip) ---
+    // --- Connectivity surfaced to the UI (offline / read-only banner) ---
 
     val isOnline: Flow<Boolean> = connectivityObserver.online
-    val pendingSyncCount: Flow<Int> = database.outboxDao().pendingCountFlow()
-    val failedSync: Flow<List<OutboxMutation>> = database.outboxDao().failedFlow()
 
     init {
         // RetrofitClient builds its OkHttp/Retrofit stack lazily and reads this on first use,

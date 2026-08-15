@@ -1,16 +1,16 @@
 package com.gv.app.data.local.db
 
+import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlinx.coroutines.flow.Flow
-import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
 
 /**
- * A visited concello, cached for offline use. Keyed by concello [name] (matches the API + web).
- * [serverId] is null until a locally-created mark syncs; [outboxId] is the key used in the
- * outbox (a `tmp_…` id pre-sync, the server id afterwards).
+ * A visited concello, cached so the map stays meaningful offline. Keyed by concello [name]
+ * (matches the API + web). Every row is a copy of a server row, so [serverId] is always set
+ * once it has been fetched.
  */
 @Entity(tableName = "concello_mark")
 data class ConcelloMarkEntity(
@@ -18,7 +18,6 @@ data class ConcelloMarkEntity(
     val serverId: Int?,
     val visitedOn: String,
     val description: String,
-    val outboxId: String,
 )
 
 @Dao
@@ -39,9 +38,6 @@ interface RutasDao {
     @Query("DELETE FROM concello_mark WHERE name = :name")
     suspend fun deleteByName(name: String)
 
-    @Query("SELECT * FROM concello_mark WHERE serverId IS NULL")
-    suspend fun pendingCreates(): List<ConcelloMarkEntity>
-
-    @Query("DELETE FROM concello_mark WHERE serverId IS NOT NULL")
-    suspend fun deleteSynced()
+    @Query("DELETE FROM concello_mark")
+    suspend fun deleteAllMarks()
 }

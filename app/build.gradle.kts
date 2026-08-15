@@ -61,6 +61,8 @@ android {
             buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${envDev.getProperty("SPOTIFY_CLIENT_ID", "")}\"")
             buildConfigField("String", "SPOTIFY_CLIENT_SECRET", "\"${envDev.getProperty("SPOTIFY_CLIENT_SECRET", "")}\"")
             buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"${envDev.getProperty("SPOTIFY_REDIRECT_URI", "")}\"")
+            buildConfigField("String", "AUTH_PASSWORD", "\"${envDev.getProperty("AUTH_PASSWORD", "")}\"")
+            buildConfigField("String", "AUTH_TOTP_SECRET", "\"${envDev.getProperty("AUTH_TOTP_SECRET", "")}\"")
         }
         release {
             isMinifyEnabled = false
@@ -69,6 +71,31 @@ android {
             buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${envProd.getProperty("SPOTIFY_CLIENT_ID", "")}\"")
             buildConfigField("String", "SPOTIFY_CLIENT_SECRET", "\"${envProd.getProperty("SPOTIFY_CLIENT_SECRET", "")}\"")
             buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"${envProd.getProperty("SPOTIFY_REDIRECT_URI", "")}\"")
+            buildConfigField("String", "AUTH_PASSWORD", "\"${envProd.getProperty("AUTH_PASSWORD", "")}\"")
+            buildConfigField("String", "AUTH_TOTP_SECRET", "\"${envProd.getProperty("AUTH_TOTP_SECRET", "")}\"")
+        }
+    }
+
+    // Two apps from one codebase. `lights` is a lights-only remote: same code, but it opens
+    // straight onto the Lights tab with no bottom bar, and carries its own applicationId so it
+    // installs alongside the full app instead of replacing it.
+    //
+    // Only lights, not the whole Domotics section: printers are an ffmpeg/RTSP stream, which
+    // belongs in a browser rather than behind a phone app.
+    flavorDimensions += "surface"
+
+    productFlavors {
+        create("full") {
+            dimension = "surface"
+            buildConfigField("Boolean", "LIGHTS_ONLY", "false")
+            resValue("string", "app_name", "GV")
+        }
+        create("lights") {
+            dimension = "surface"
+            applicationIdSuffix = ".lights"
+            versionNameSuffix = "-lights"
+            buildConfigField("Boolean", "LIGHTS_ONLY", "true")
+            resValue("string", "app_name", "GV Lights")
         }
     }
 

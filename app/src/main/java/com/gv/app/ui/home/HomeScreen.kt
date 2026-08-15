@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.Icon
@@ -33,9 +34,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gv.app.BuildConfig
 import com.gv.app.data.local.ThemePreference
 import com.gv.app.ui.common.SettingsViewModel
 import com.gv.app.ui.common.SyncStatusBanner
+import com.gv.app.ui.domotics.LightsScreen
 import com.gv.app.ui.habits.HabitsScreen
 import com.gv.app.ui.money.MoneyScreen
 import com.gv.app.ui.otros.OtrosScreen
@@ -51,16 +54,28 @@ private enum class HomeTab(
     HABITS("Habits", Icons.Outlined.CheckCircle, enabled = true),
     TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = true),
     FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = true),
+    LIGHTS("Lights", Icons.Outlined.Lightbulb, enabled = true),
     OTROS("Otros", Icons.Outlined.MoreHoriz, enabled = true),
 }
 
+/**
+ * Which tabs this build ships. The `lights` flavour is a single-purpose remote, so it drops
+ * the bottom bar entirely rather than showing a one-item one.
+ */
+private val visibleTabs: List<HomeTab> =
+    if (BuildConfig.LIGHTS_ONLY) listOf(HomeTab.LIGHTS) else HomeTab.entries
+
 @Composable
 fun HomeScreen() {
-    var selected by rememberSaveable { mutableStateOf(HomeTab.HABITS) }
+    var selected by rememberSaveable { mutableStateOf(visibleTabs.first()) }
 
     Scaffold(
         containerColor = GvColors.Bg,
-        bottomBar = { GvNavigationBar(selected = selected, onSelect = { selected = it }) },
+        bottomBar = {
+            if (visibleTabs.size > 1) {
+                GvNavigationBar(selected = selected, onSelect = { selected = it })
+            }
+        },
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -74,6 +89,7 @@ fun HomeScreen() {
                     HomeTab.HABITS -> HabitsScreen()
                     HomeTab.TASKS -> TasksScreen()
                     HomeTab.FINANCE -> MoneyScreen()
+                    HomeTab.LIGHTS -> LightsScreen()
                     HomeTab.OTROS -> OtrosScreen()
                 }
             }
@@ -114,7 +130,7 @@ private fun GvNavigationBar(
         containerColor = GvColors.BgLight,
         contentColor = GvColors.Text,
     ) {
-        HomeTab.entries.forEach { tab ->
+        visibleTabs.forEach { tab ->
             NavigationBarItem(
                 selected = selected == tab,
                 enabled = tab.enabled,

@@ -20,15 +20,14 @@ data class TasksSnapshotEntity(
 )
 
 /**
- * The single running timer (presence of the row = a timer is running). [outboxId] links to the
- * queued create (a `tmp_…` id until the server assigns one); [serverId] is filled in on sync so
- * later stop/assign mutations target the real entry. Elapsed time is derived from [startedAt].
+ * The single running timer (presence of the row = a timer is running). [serverId] is the real
+ * time-entry id: a timer only ever exists here after the server has created it, so stop/assign
+ * can target it directly. Elapsed time is derived from [startedAt].
  */
 @Entity(tableName = "active_timer")
 data class ActiveTimerEntity(
     @PrimaryKey val id: Int = 0,
-    val outboxId: String,
-    val serverId: Int?,
+    val serverId: Int,
     val taskId: Int,
     val taskName: String,
     val projectName: String?,

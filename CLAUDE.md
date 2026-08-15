@@ -8,20 +8,28 @@ GV-Android is the Android client for gestor-vida. The app currently contains: au
 
 ## Build & Development Commands
 
-All common operations are available via Makefile:
+Two product flavours ship from this codebase, so every Gradle task name carries one:
+
+- **`full`** — the whole app (`com.gv.app`).
+- **`lights`** — a lights-only remote, "GV Lights" (`com.gv.app.lights`). Same code, but it
+  opens straight onto the Lights tab with no bottom bar. Its own applicationId, so both
+  install side by side. Lights only, not the rest of Domotics: printers are an ffmpeg/RTSP
+  stream, which belongs in a browser.
+
+Each target has a `-lights` twin:
 
 ```bash
-make build          # assembleDebug
-make run            # build + install + adb reverse tcp:8080 + launch
-make release        # bumps versionCode in version.properties, assembleRelease, installs
-make install        # build + adb install debug APK
-make test           # ./gradlew connectedDebugAndroidTest (instrumented, requires device/emulator)
-make clean          # ./gradlew clean
-make log            # adb logcat filtered to app PID
-make hooks          # set git hooks path to .githooks/ (pre-commit runs tests)
+make build / build-lights        # assemble{Full,Lights}Debug
+make run   / run-lights          # build + install + adb reverse tcp:8080 + launch
+make install / install-lights    # build + adb install debug APK
+make release / release-lights    # bump versionCode, assemble release, install
+make uninstall / uninstall-lights
+make log / log-lights            # logcat filtered to that app's PID
+make clean, make devices, make test
 ```
 
-Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./gradlew connectedDebugAndroidTest` (instrumented).
+Direct Gradle: `./gradlew assembleFullDebug`, `./gradlew testFullDebugUnitTest` (JVM unit
+tests), `./gradlew connectedFullDebugAndroidTest` (instrumented).
 
 ## Environment Setup
 
@@ -85,11 +93,53 @@ Direct Gradle: `./gradlew assembleDebug`, `./gradlew test` (unit tests), `./grad
 
 ## Testing
 
-- **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test (wired in Gradle; no tests currently exist under `app/src/test/` or `app/src/androidTest/`).
+- **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test.
+- JVM unit tests live in `app/src/test/` and run with `./gradlew testFullDebugUnitTest`. They
+  cover `PatchBody` (explicit-null semantics), `ApiResult` (offline vs server error) and
+  `Totp` (RFC 6238 vectors — a TOTP bug is invisible until it locks the app out of its own
+  API, and only at the 30-second boundary that happened to be wrong).
 
 ## Navigation
 
 Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `HomeScreen`, which itself owns the bottom-tab navigation between feature screens (currently only Alarm is wired up).
+
+## Data layer — online-first, offline read-only
+
+The app talks to **gv-api** and nothing else. All logic lives there; this app is an interface.
+
+- **Writes require a connection.** Every mutating repository method calls
+  `OnlineGate.requireOnline()` first and returns `ApiResult.offline()` when there is none, so
+  the rule cannot be bypassed by a screen that forgets to disable a button. Room is only a read
+  cache: screens still render offline, they just cannot change anything.
+- **This replaced a write-behind outbox** (Room queue + WorkManager replay). Replaying queued
+  mutations meant the client had to guess how to reconcile them — remapping temporary ids onto
+  server ids, merging conflicting edits, deciding which failures were permanent — and each
+  guess was a way for the UI to disagree with the server. Refusing the write is worse for the
+  three minutes a year you edit a task in a tunnel and better every other minute.
+- **After a successful write, re-read** rather than patching local state from the request.
+  `TaskRepository` calls `reconcile()`; `HabitRepository` re-fetches the affected day so
+  server-computed streaks are right rather than guessed.
+- **ViewModels surface write failures** through their toast flow. The offline banner explains
+  the state, but a tap that silently does nothing reads as a bug.
+- **Lights keep no cache at all** — a stale bulb state invites tapping a control that cannot
+  run, and whether the light is on is visible from the sofa.
+
+## Auth — automatic login
+
+`AutoLogin` (in `data/auth/`) signs in on startup from `AUTH_PASSWORD` + `AUTH_TOTP_SECRET`,
+baked in via `buildConfigField`. It answers the API's 2FA step itself with `Totp`, a hand-rolled
+RFC 6238 implementation (~40 lines, no dependency). This runs in **every** build type, not just
+debug. Leaving either value empty disables it and the manual login screen takes over.
+
+Both factors therefore ship inside the APK, so 2FA is not a second factor for anyone holding
+the file — an accepted trade for a household app on known phones.
+
+**The local API and the deployed one have different passwords but the same TOTP secret**, so
+`.env` (debug, `make run`) carries the local password and `.env.prod` (release) the server one.
+
+**A wrong clock breaks this silently.** TOTP is time-based, so a device or server more than ~30s
+off gets `invalid 2fa code` with everything else correct. Check all three clocks before
+suspecting the code.
 
 ## Visual style
 

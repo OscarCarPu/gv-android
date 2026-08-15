@@ -6,27 +6,24 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 /**
- * The app's local cache + write-behind outbox. The DB is a *cache* of server state plus the
- * durable outbox queue, so a destructive migration only costs a re-sync (and, in the rare
- * case, unsynced offline writes) — acceptable during active development. Schemas are exported
- * (see the `room.schemaLocation` ksp arg) so real migrations can be authored later.
+ * The app's local read cache. Every row here is a copy of something the server owns, so a
+ * destructive migration costs nothing but a re-fetch — there are no local-only writes to lose
+ * (the app refuses writes when offline rather than queueing them). Schemas are exported (see
+ * the `room.schemaLocation` ksp arg) so real migrations can be authored later.
  *
  * Entities are added per feature phase; the version is bumped alongside.
  */
 @Database(
     entities = [
-        OutboxMutation::class,
         HabitDayEntity::class,
         TasksSnapshotEntity::class,
         ActiveTimerEntity::class,
         ConcelloMarkEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class GvDatabase : RoomDatabase() {
-
-    abstract fun outboxDao(): OutboxDao
 
     abstract fun habitDao(): HabitDao
 

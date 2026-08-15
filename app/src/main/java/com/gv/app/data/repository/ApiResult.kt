@@ -6,22 +6,36 @@ import retrofit2.Response
 import java.io.IOException
 
 /**
- * Outcome of a single network call, with enough detail for both UI error display and the
- * outbox worker's retry/dead-letter decision. [Failure.code] is the HTTP status when the
- * server responded; null means the request never completed (no network / timeout / parse).
+ * Outcome of a single network call.
+ *
+ * [Failure.code] is the HTTP status when the server answered; null means the request never
+ * completed (no network / timeout / parse error). [Failure.offline] marks the specific case
+ * of "we knew there was no connection", which the UI phrases differently from a real error —
+ * being offline is a normal state here, not a fault.
  */
 sealed interface ApiResult<out T> {
     data class Success<T>(val data: T) : ApiResult<T>
-    data class Failure(val message: String, val code: Int? = null) : ApiResult<Nothing>
+    data class Failure(
+        val message: String,
+        val code: Int? = null,
+        val offline: Boolean = false,
+    ) : ApiResult<Nothing>
+
+    companion object {
+        /**
+         * The single refusal every write funnels through when there is no connection.
+         * Returned by [requireOnline] rather than thrown, so callers surface it as a normal
+         * error state.
+         */
+        fun offline(): Failure = Failure(OFFLINE_MESSAGE, offline = true)
+
+        const val OFFLINE_MESSAGE = "You're offline — connect to make changes"
+    }
 }
 
-/** A failure that came back from the server (has an HTTP status) is permanent for 4xx. */
-val ApiResult.Failure.isClientError: Boolean
-    get() = code != null && code in 400..499
-
-/** No HTTP status → the call never reached/heard-back from the server; worth retrying. */
-val ApiResult.Failure.isTransient: Boolean
-    get() = code == null || code in 500..599
+/** Convenience for the common `is Success` check at call sites. */
+val ApiResult<*>.isSuccess: Boolean
+    get() = this is ApiResult.Success
 
 private val errorGson = Gson()
 
