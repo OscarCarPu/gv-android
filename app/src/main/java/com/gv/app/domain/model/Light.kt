@@ -1,9 +1,10 @@
 package com.gv.app.domain.model
 
 /**
- * Domotics light DTOs. Field names are snake-free camelCase because gv-web serialises the
- * TypeScript shape verbatim — unlike gv-api's snake_case JSON — so Gson's defaults match as-is.
- * Mirrors `src/lib/server/domotics/lights/types.ts`.
+ * Domotics light DTOs. Field names are camelCase rather than the snake_case the rest of gv-api
+ * uses, so Gson's defaults match as-is. Mirrors `gv-api/internal/lights/dto.go`.
+ *
+ * Which bulbs exist is managed from gv-web (scan, pick, name); this app only drives them.
  */
 
 data class LightRgb(

@@ -60,7 +60,9 @@ fun LightsScreen(vm: LightsViewModel = viewModel()) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    state.error ?: "No bulbs configured.",
+                    // Adding a bulb means scanning for it, which is a job for the web app; this
+                    // one is a remote for bulbs that already exist.
+                    state.error ?: "No bulbs yet. Add one from the Lights tab on the web.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = GvColors.TextMuted,
                     textAlign = TextAlign.Center,
