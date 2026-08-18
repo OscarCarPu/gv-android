@@ -12,7 +12,8 @@ APK_RELEASE     := app/build/outputs/apk/full/release/app-full-release.apk
 LIGHTS_APK_DEBUG   := app/build/outputs/apk/lights/debug/app-lights-debug.apk
 LIGHTS_APK_RELEASE := app/build/outputs/apk/lights/release/app-lights-release.apk
 
-.PHONY: build release install run clean uninstall log devices test hooks \
+.PHONY: build release install run clean uninstall log devices hooks \
+        test lint check test-device \
         build-lights release-lights install-lights run-lights uninstall-lights log-lights
 
 ## Configure git to use the tracked hooks in .githooks/
@@ -99,6 +100,18 @@ clean:
 devices:
 	adb devices
 
-## Run instrumented tests on connected device
+## Run JVM unit tests. This is what the pre-commit hook runs, so it must not
+## need a device attached.
 test:
+	./gradlew testFullDebugUnitTest
+
+## Run Android lint over the full flavour
+lint:
+	./gradlew lintFullDebug
+
+## test + lint
+check: test lint
+
+## Run instrumented tests on a connected device
+test-device:
 	./gradlew connectedFullDebugAndroidTest

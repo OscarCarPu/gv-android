@@ -423,7 +423,7 @@ private fun TypeChip(
 }
 
 @Composable
-fun GvTextField(
+private fun GvTextField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,

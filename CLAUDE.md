@@ -25,7 +25,7 @@ make install / install-lights    # build + adb install debug APK
 make release / release-lights    # bump versionCode, assemble release, install
 make uninstall / uninstall-lights
 make log / log-lights            # logcat filtered to that app's PID
-make clean, make devices, make test
+make clean, make devices, make test (JVM), make lint, make check, make test-device
 ```
 
 Direct Gradle: `./gradlew assembleFullDebug`, `./gradlew testFullDebugUnitTest` (JVM unit
@@ -63,7 +63,6 @@ tests), `./gradlew connectedFullDebugAndroidTest` (instrumented).
 - **domain/model/** — `Models.kt` holds the auth DTOs (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`); `Habit.kt` holds the habit DTOs; `Money.kt` holds `Account`, `Category`, `Transaction`, `Overview*` and money request bodies; `Task.kt` holds the task domain — `TaskByDueDateResponse`, `TaskFullResponse`, `ActiveTreeNode`, `TodoResponse`, `TimeEntryResponse`, `ActiveTimeEntryResponse`, `TimeEntrySummaryResponse`, `PlanTodayResponse`, `ProjectListItem`, plus request bodies. Field names use snake_case to match the API JSON directly via Gson defaults.
 - **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled + selected playlist URI/name/imageUrl), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day).
 - **spotify/** — All Spotify integration in a single file `Spotify.kt`: `SpotifyAlarm` foreground Service, `SpotifyAuth` (PKCE OAuth state machine + token refresh), `SpotifyAuthCallbackActivity` (catches the `com.gv.app://spotify-callback` redirect), Retrofit Web API client, and the public `Spotify` entry point (`Spotify.state`, `Spotify.startLogin`, `Spotify.listMyPlaylists`).
-- **notification/** — Legacy skeleton (`NotificationHelper`, `NotificationScheduler`, `NotificationReceiver`) currently unused by any active feature. Retained only because the manifest receiver entry is still present; scheduled for removal.
 - **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four enabled tabs: Alarm, Habits, Tasks, Finance), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard — date-paginated list of habits for a single day), `tasks/` (TasksScreen + TasksViewModel + TaskSheets + TasksUtils — three sub-tabs Today/Due/Projects with a compact running-timer card, progress vs daily/weekly target, read-only plan view, task CRUD via bottom sheets, expand/collapse project tree; see `docs/tasks.md`), `money/` (MoneyScreen + MoneyViewModel + FormSheets + MoneyUtils — three sub-tabs Overview/Accounts/Categories, FAB-driven CRUD via bottom sheets, tree-rendered categories with expand/collapse; see `docs/money.md`), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
 
 **Key patterns:**

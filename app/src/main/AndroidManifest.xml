@@ -26,7 +26,6 @@
             </intent-filter>
         </activity>
 
-        <receiver android:name=".notification.NotificationReceiver" android:exported="false" />
         <receiver android:name=".alarm.AlarmTriggerReceiver" android:exported="false" />
 
         <service

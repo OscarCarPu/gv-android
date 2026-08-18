@@ -72,21 +72,21 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`
 ## Testing
 
 ```bash
-make test            # instrumented tests on connected device
-./gradlew test       # unit tests (no device needed)
+make test            # JVM unit tests, no device needed
+make lint            # Android lint over the full flavour
+make check           # both
+make test-device     # instrumented tests on a connected device
 ```
 
-Instrumented tests live in `app/src/androidTest/java/com/gv/app/`.
-Unit tests live in `app/src/test/java/com/gv/app/`.
+Unit tests live in `app/src/test/java/com/gv/app/`; instrumented ones in
+`app/src/androidTest/java/com/gv/app/`.
 
-A pre-commit hook runs `make test` automatically on every commit. Hooks are tracked in
-`.githooks/` — activate them once after cloning:
+A pre-commit hook runs `make test` on every commit, which is why that target is the
+device-free one. Hooks are tracked in `.githooks/` — activate them once after cloning:
 
 ```bash
 make hooks
 ```
-
-No tests currently exist; the harness (JUnit 4 + MockK + Coroutines Test + Compose UI Test) is wired in Gradle ready for features to land.
 
 ## Features
 

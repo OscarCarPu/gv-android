@@ -100,13 +100,6 @@ fun buildCategoryTreeRows(categories: List<Category>): List<CategoryTreeRow> {
     return out
 }
 
-fun typeLabel(type: String): String = when (type) {
-    "income" -> "Income"
-    "expense" -> "Expense"
-    "transfer" -> "Transfer"
-    else -> type
-}
-
 enum class AmountSign { POS, NEG, NEU }
 
 fun amountSign(type: String): AmountSign = when (type) {
