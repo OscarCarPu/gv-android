@@ -19,8 +19,10 @@ import androidx.room.RoomDatabase
         TasksSnapshotEntity::class,
         ActiveTimerEntity::class,
         ConcelloMarkEntity::class,
+        CalendarEntity::class,
+        CalendarEventEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class GvDatabase : RoomDatabase() {
@@ -30,6 +32,8 @@ abstract class GvDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
 
     abstract fun rutasDao(): RutasDao
+
+    abstract fun calendarDao(): CalendarDao
 
     companion object {
         @Volatile

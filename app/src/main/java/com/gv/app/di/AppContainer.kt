@@ -1,12 +1,15 @@
 package com.gv.app.di
 
 import android.content.Context
+import com.gv.app.BuildConfig
 import com.gv.app.data.api.ApiService
+import com.gv.app.data.api.CalendarStream
 import com.gv.app.data.api.RetrofitClient
 import com.gv.app.data.auth.AutoLogin
 import com.gv.app.data.local.ThemeStore
 import com.gv.app.data.local.TokenManager
 import com.gv.app.data.local.db.GvDatabase
+import com.gv.app.data.repository.CalendarRepository
 import com.gv.app.data.repository.HabitRepository
 import com.gv.app.data.repository.LightsRepository
 import com.gv.app.data.repository.OnlineGate
@@ -68,11 +71,31 @@ class AppContainer(context: Context) {
     val lightsRepository: LightsRepository =
         LightsRepository(apiService, onlineGate)
 
+    /**
+     * gv-api's calendar change stream. Built here rather than inside the repository because it
+     * needs the streaming OkHttp client (no read timeout, no body logging) and the connectivity
+     * check, neither of which the Retrofit service exposes.
+     */
+    private val calendarStream: CalendarStream = CalendarStream(
+        client = RetrofitClient.streamClient,
+        baseUrl = BuildConfig.BASE_URL,
+        isOnline = connectivityObserver::isOnline,
+    )
+
+    val calendarRepository: CalendarRepository = CalendarRepository(
+        apiService,
+        database,
+        database.calendarDao(),
+        onlineGate,
+        calendarStream,
+    )
+
     // Lights are absent on purpose: they keep no cache, so there is nothing to warm up.
     private val repositories: List<Any> = listOf(
         habitRepository,
         taskRepository,
         rutasRepository,
+        calendarRepository,
     )
 
     val cacheRefreshers: List<CacheRefresher> = repositories.filterIsInstance<CacheRefresher>()

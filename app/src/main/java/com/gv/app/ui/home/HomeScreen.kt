@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Lightbulb
@@ -36,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gv.app.BuildConfig
 import com.gv.app.data.local.ThemePreference
+import com.gv.app.ui.calendar.CalendarScreen
 import com.gv.app.ui.common.SettingsViewModel
 import com.gv.app.ui.common.SyncStatusBanner
 import com.gv.app.ui.domotics.LightsScreen
@@ -53,6 +55,7 @@ private enum class HomeTab(
 ) {
     HABITS("Habits", Icons.Outlined.CheckCircle, enabled = true),
     TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = true),
+    CALENDAR("Calendar", Icons.Outlined.CalendarMonth, enabled = true),
     FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = true),
     LIGHTS("Lights", Icons.Outlined.Lightbulb, enabled = true),
     OTROS("Otros", Icons.Outlined.MoreHoriz, enabled = true),
@@ -88,6 +91,7 @@ fun HomeScreen() {
                 when (selected) {
                     HomeTab.HABITS -> HabitsScreen()
                     HomeTab.TASKS -> TasksScreen()
+                    HomeTab.CALENDAR -> CalendarScreen()
                     HomeTab.FINANCE -> MoneyScreen()
                     HomeTab.LIGHTS -> LightsScreen()
                     HomeTab.OTROS -> OtrosScreen()
@@ -136,7 +140,9 @@ private fun GvNavigationBar(
                 enabled = tab.enabled,
                 onClick = { onSelect(tab) },
                 icon = { Icon(tab.icon, contentDescription = tab.label) },
-                label = { Text(tab.label) },
+                // Six tabs leave about sixty points each, so a label may not fit whole; clipping
+                // one is better than wrapping it onto a second line and shoving the bar taller.
+                label = { Text(tab.label, maxLines = 1, softWrap = false) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = GvColors.Primary,
                     selectedTextColor = GvColors.Primary,

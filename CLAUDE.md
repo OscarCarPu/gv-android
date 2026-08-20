@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen with four working tabs — the daily Spotify alarm, Habits (list / log / delete for the day), Tasks (today/due/projects with a running timer, task CRUD, and read-only plan view), and Money (overview KPIs + CRUD for transactions, accounts, and categories). Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
+GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen — Habits (list / log / delete for the day), Tasks (today/due/projects with a running timer, task CRUD, and read-only plan view), Calendar (month/week/day over the Google-calendar mirror, event CRUD, live updates), Money (overview KPIs + CRUD for transactions, accounts, and categories), Lights (domotics), and Otros (Rutas + the daily Spotify alarm). Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
 
 ## Build & Development Commands
 
@@ -58,12 +58,12 @@ tests), `./gradlew connectedFullDebugAndroidTest` (instrumented).
 
 **MVVM + Clean Architecture layers** under package `com.gv.app`:
 
-- **data/api/** — `ApiService` (Retrofit interface: 2 auth endpoints; 3 habit endpoints; the `/finance/*` endpoints — overview, accounts CRUD, categories CRUD, transactions CRUD + GET-by-id; and the `/tasks/*` + `/plan/*` endpoints — tasks-by-due-date, active tree, task CRUD (PATCH semantics), todos CRUD, time-entries (create/update/delete/active/summary), plan-today, projects-list-fast), `RetrofitClient` (singleton with OkHttp auth interceptor).
+- **data/api/** — `ApiService` (Retrofit interface: 2 auth endpoints; 3 habit endpoints; the `/finance/*` endpoints — overview, accounts CRUD, categories CRUD, transactions CRUD + GET-by-id; the `/tasks/*` + `/plan/*` endpoints — tasks-by-due-date, active tree, task CRUD (PATCH semantics), todos CRUD, time-entries (create/update/delete/active/summary), plan-today, projects-list-fast; the `/rutas/*` marks CRUD; the `/domotics/lights/*` endpoints; and the `/calendar/*` endpoints — events range/CRUD/move, calendars + preferences, accounts + consent URL, sync), `RetrofitClient` (singleton with OkHttp auth interceptor, plus a separate `streamClient` for SSE), `CalendarStream` (the `/calendar/stream` reader), `IsoTime` (`parseInstantOrNull`, the one place that reads an instant off the wire).
 - **data/local/** — `TokenManager` (SharedPreferences-based JWT storage exposing `StateFlow<String?>`).
-- **domain/model/** — `Models.kt` holds the auth DTOs (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`); `Habit.kt` holds the habit DTOs; `Money.kt` holds `Account`, `Category`, `Transaction`, `Overview*` and money request bodies; `Task.kt` holds the task domain — `TaskByDueDateResponse`, `TaskFullResponse`, `ActiveTreeNode`, `TodoResponse`, `TimeEntryResponse`, `ActiveTimeEntryResponse`, `TimeEntrySummaryResponse`, `PlanTodayResponse`, `ProjectListItem`, plus request bodies. Field names use snake_case to match the API JSON directly via Gson defaults.
+- **domain/model/** — `Models.kt` holds the auth DTOs (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`); `Habit.kt` holds the habit DTOs; `Money.kt` holds `Account`, `Category`, `Transaction`, `Overview*` and money request bodies; `Calendar.kt` holds the calendar domain — `GoogleCalendar`, `CalendarAccount`, `CalendarEvent`, `Create`/`Update`/`Move` request bodies, and the `EventScope` / `SendUpdates` constants; `Task.kt` holds the task domain — `TaskByDueDateResponse`, `TaskFullResponse`, `ActiveTreeNode`, `TodoResponse`, `TimeEntryResponse`, `ActiveTimeEntryResponse`, `TimeEntrySummaryResponse`, `PlanTodayResponse`, `ProjectListItem`, plus request bodies. Field names use snake_case to match the API JSON directly via Gson defaults.
 - **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled + selected playlist URI/name/imageUrl), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day).
 - **spotify/** — All Spotify integration in a single file `Spotify.kt`: `SpotifyAlarm` foreground Service, `SpotifyAuth` (PKCE OAuth state machine + token refresh), `SpotifyAuthCallbackActivity` (catches the `com.gv.app://spotify-callback` redirect), Retrofit Web API client, and the public `Spotify` entry point (`Spotify.state`, `Spotify.startLogin`, `Spotify.listMyPlaylists`).
-- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of four enabled tabs: Alarm, Habits, Tasks, Finance), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard — date-paginated list of habits for a single day), `tasks/` (TasksScreen + TasksViewModel + TaskSheets + TasksUtils — three sub-tabs Today/Due/Projects with a compact running-timer card, progress vs daily/weekly target, read-only plan view, task CRUD via bottom sheets, expand/collapse project tree; see `docs/tasks.md`), `money/` (MoneyScreen + MoneyViewModel + FormSheets + MoneyUtils — three sub-tabs Overview/Accounts/Categories, FAB-driven CRUD via bottom sheets, tree-rendered categories with expand/collapse; see `docs/money.md`), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
+- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of six tabs: Habits, Tasks, Calendar, Finance, Lights, Otros), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard — date-paginated list of habits for a single day), `tasks/` (TasksScreen + TasksViewModel + TaskSheets + TasksUtils — three sub-tabs Today/Due/Projects with a compact running-timer card, progress vs daily/weekly target, read-only plan view, task CRUD via bottom sheets, expand/collapse project tree; see `docs/tasks.md`), `calendar/` (CalendarScreen + CalendarViewModel + CalendarViews + EventSheet + CalendarsSheet + CalendarFields + CalendarUtils — month/week/day over gv-api's Google-calendar mirror; see `docs/calendar.md`), `money/` (MoneyScreen + MoneyViewModel + FormSheets + MoneyUtils — three sub-tabs Overview/Accounts/Categories, FAB-driven CRUD via bottom sheets, tree-rendered categories with expand/collapse; see `docs/money.md`), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
 
 **Key patterns:**
 - **Auth routing**: `TokenManager.tokenFlow` drives navigation inside `AppNavigation`. On token change, the NavHost navigates between `login` and `home` routes.
@@ -90,17 +90,45 @@ tests), `./gradlew connectedFullDebugAndroidTest` (instrumented).
 - **Delete UX**: long-press a card → `AlertDialog` with `Danger`-tinted confirm. The card is removed from the list optimistically; failure restores it.
 - Card visuals: name + optional frequency pill (only when not `daily`) + optional `Star` icon for `recording_required` (server flag — when on, missing days break the streak; when off, missing days carry forward the previous value). Progress bar and streaks (fire = current, trophy = longest) only render when at least one of `target_min` / `target_max` is set.
 
+### Calendar feature
+
+Month / week / day over gv-api's mirror of the user's Google calendars, with event CRUD, per-calendar
+visibility and sync, account management, and live updates. Full details in `docs/calendar.md`; the
+rules that bite are:
+
+- **The API owns the hard parts.** Recurrence is expanded server-side, so `GET /calendar/events`
+  returns occurrences and this client never reads an RRULE to work out when something happens.
+- **An all-day event is a date, not an instant.** Place it by `start_date` / `end_date`; its
+  instants are midnight in the *calendar's* zone, which can be a day away from the phone's, and
+  using them spreads a one-day event over two local days. Its end is **exclusive**, so a one-day
+  event is `starts_at = D`, `ends_at = D+1`.
+- **A timed event is a real instant** — convert the picked wall clock with the phone's offset
+  (`CalendarUtils.localToApiInstant`), not by stamping it as UTC the way a task's `due_at` wants.
+- **An occurrence is addressed by `instance_id`** (`12@2026-08-20T07:00:00Z`), passed back verbatim
+  and **unencoded**: OkHttp leaves `@` and `:` alone in a path segment, which is what gv-api's
+  parser expects, and chi would hand the handler a percent-encoded segment it cannot parse.
+- **A custom recurrence rule is never remapped onto a preset.** Anything with `COUNT`, `UNTIL` or
+  `INTERVAL` is shown as custom and sent back untouched.
+- **Writes are followed by re-reading the range**, never by patching local state: Google rewrites
+  what it is given — a `following` split moves the occurrence into a new series with a new id, and
+  a cross-account move recreates the event.
+- **Live updates** come over SSE (`/calendar/stream`), which needs its own OkHttp client (no read
+  timeout, no body logging) and is scoped to the screen being resumed, not to the ViewModel.
+
 ## Testing
 
 - **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test.
 - JVM unit tests live in `app/src/test/` and run with `./gradlew testFullDebugUnitTest`. They
-  cover `PatchBody` (explicit-null semantics), `ApiResult` (offline vs server error) and
+  cover `PatchBody` (explicit-null semantics), `ApiResult` (offline vs server error),
   `Totp` (RFC 6238 vectors — a TOTP bug is invisible until it locks the app out of its own
-  API, and only at the 30-second boundary that happened to be wrong).
+  API, and only at the 30-second boundary that happened to be wrong) and `CalendarUtils`
+  (all-day placement by date rather than instant, exclusive all-day ends, wall-clock-to-instant
+  conversion, recurrence presets, lane layout — every one of which renders plausibly while being
+  wrong).
 
 ## Navigation
 
-Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `HomeScreen`, which itself owns the bottom-tab navigation between feature screens (currently only Alarm is wired up).
+Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `HomeScreen`, which itself owns the bottom-tab navigation between feature screens.
 
 ## Data layer — online-first, offline read-only
 
@@ -121,7 +149,8 @@ The app talks to **gv-api** and nothing else. All logic lives there; this app is
 - **ViewModels surface write failures** through their toast flow. The offline banner explains
   the state, but a tap that silently does nothing reads as a bug.
 - **Lights keep no cache at all** — a stale bulb state invites tapping a control that cannot
-  run, and whether the light is on is visible from the sofa.
+  run, and whether the light is on is visible from the sofa. The **calendar does** cache, for the
+  opposite reason: a stale calendar is still the answer to "what have I got on today".
 
 ## Auth — automatic login
 

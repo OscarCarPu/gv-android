@@ -1,6 +1,17 @@
 package com.gv.app.data.api
 
 import com.gv.app.domain.model.Account
+import com.gv.app.domain.model.AuthUrlResponse
+import com.gv.app.domain.model.CalendarAccount
+import com.gv.app.domain.model.CalendarEvent
+import com.gv.app.domain.model.CreateEventRequest
+import com.gv.app.domain.model.GoogleCalendar
+import com.gv.app.domain.model.MoveEventRequest
+import com.gv.app.domain.model.MoveEventResult
+import com.gv.app.domain.model.SyncResult
+import com.gv.app.domain.model.UpdateCalendarAccountRequest
+import com.gv.app.domain.model.UpdateCalendarRequest
+import com.gv.app.domain.model.UpdateEventRequest
 import com.gv.app.domain.model.Category
 import com.gv.app.domain.model.CreateAccountRequest
 import com.gv.app.domain.model.CreateCategoryRequest
@@ -245,4 +256,93 @@ interface ApiService {
         @Path("id") id: String,
         @Body command: LightCommandRequest,
     ): Response<LightState>
+
+    // --- Calendar: a local mirror of the user's Google calendars, editable from here ---
+    //
+    // Google stays the source of truth: reads are served from gv-api's mirror, writes go to
+    // Google first and are stored only once it accepts them. Recurrence is expanded server-side,
+    // so `getCalendarEvents` already returns occurrences.
+
+    @GET("calendar/accounts")
+    suspend fun listCalendarAccounts(): Response<List<CalendarAccount>>
+
+    /** The Google consent URL for adding one account. Expires in minutes; 503 if unconfigured. */
+    @POST("calendar/accounts/auth-url")
+    suspend fun calendarAuthUrl(): Response<AuthUrlResponse>
+
+    @PATCH("calendar/accounts/{id}")
+    suspend fun updateCalendarAccount(
+        @Path("id") id: Int,
+        @Body request: UpdateCalendarAccountRequest,
+    ): Response<CalendarAccount>
+
+    /** Stops the push channels, revokes the grant at Google, drops the local copy. */
+    @DELETE("calendar/accounts/{id}")
+    suspend fun deleteCalendarAccount(@Path("id") id: Int): Response<Unit>
+
+    /** Throws the local copy of one account away and rebuilds it from scratch. */
+    @POST("calendar/accounts/{id}/resync")
+    suspend fun resyncCalendarAccount(@Path("id") id: Int): Response<SyncResult>
+
+    @GET("calendar/calendars")
+    suspend fun listCalendars(): Response<List<GoogleCalendar>>
+
+    /** Local preferences only (`sync_enabled`, `visible`, `color_override`). */
+    @PATCH("calendar/calendars/{id}")
+    suspend fun updateCalendar(
+        @Path("id") id: Int,
+        @Body request: UpdateCalendarRequest,
+    ): Response<GoogleCalendar>
+
+    /**
+     * Everything happening in `[from, to)`, recurring series already expanded. Both bounds are
+     * required, `to` is exclusive, and a range longer than two years is refused.
+     */
+    @GET("calendar/events")
+    suspend fun getCalendarEvents(
+        @Query("from") from: String,
+        @Query("to") to: String,
+        @Query("visible_only") visibleOnly: Boolean? = null,
+        @Query("calendar_ids") calendarIds: String? = null,
+        @Query("account_ids") accountIds: String? = null,
+    ): Response<List<CalendarEvent>>
+
+    /*
+     * `ref` is an event id ("12") or one occurrence ("12@2026-08-20T07:00:00Z"), taken verbatim
+     * from `instance_id` and never assembled here.
+     *
+     * It is deliberately passed through Retrofit's normal (unencoded) @Path: OkHttp leaves `@`
+     * and `:` alone in a path segment, which is what gv-api's parser expects. Percent-encoding
+     * them would break it — chi routes on the *raw* path and hands the handler the encoded
+     * segment, where `strings.Cut(ref, "@")` then finds no separator and the id fails to parse.
+     */
+    @GET("calendar/events/{ref}")
+    suspend fun getCalendarEvent(@Path("ref") ref: String): Response<CalendarEvent>
+
+    @POST("calendar/events")
+    suspend fun createCalendarEvent(@Body request: CreateEventRequest): Response<CalendarEvent>
+
+    @PATCH("calendar/events/{ref}")
+    suspend fun updateCalendarEvent(
+        @Path("ref") ref: String,
+        @Body request: UpdateEventRequest,
+    ): Response<CalendarEvent>
+
+    @DELETE("calendar/events/{ref}")
+    suspend fun deleteCalendarEvent(
+        @Path("ref") ref: String,
+        @Query("scope") scope: String? = null,
+        @Query("send_updates") sendUpdates: String? = null,
+    ): Response<Unit>
+
+    /** Between calendars of the same account Google moves it; across accounts it is recreated. */
+    @POST("calendar/events/{ref}/move")
+    suspend fun moveCalendarEvent(
+        @Path("ref") ref: String,
+        @Body request: MoveEventRequest,
+    ): Response<MoveEventResult>
+
+    /** Sync now — everything, or one calendar. The poll and push notifications do this anyway. */
+    @POST("calendar/sync")
+    suspend fun syncCalendar(@Query("calendar_id") calendarId: Int? = null): Response<SyncResult>
 }
