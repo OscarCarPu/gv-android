@@ -5,9 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gv.app.container
 import com.gv.app.data.local.db.ConcelloMarkEntity
+import com.gv.app.data.repository.ApiResult
 import com.gv.app.data.repository.RutasRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +26,12 @@ sealed class GeoState {
     data object Error : GeoState()
 }
 
+/**
+ * The Routes screen. Online-first, offline read-only: the marks are collected from the cache
+ * (so the map still means something with no connection) and every write goes to the server and
+ * is refused offline. A failed write is spoken on [toast] — the web does the same — because a sheet
+ * that closes as if it had saved, and a map that does not change, reads as a bug.
+ */
 class RutasViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo: RutasRepository = app.container.rutasRepository
@@ -33,6 +43,9 @@ class RutasViewModel(app: Application) : AndroidViewModel(app) {
         repo.marks()
             .map { list -> list.associateBy { it.name } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    private val _toast = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val toast: SharedFlow<String> = _toast.asSharedFlow()
 
     private val _activeProvince = MutableStateFlow<String?>(null)
     val activeProvince: StateFlow<String?> = _activeProvince.asStateFlow()
@@ -64,12 +77,17 @@ class RutasViewModel(app: Application) : AndroidViewModel(app) {
     fun clearSelection() { _selected.value = null }
 
     fun saveMark(name: String, visitedOn: String, description: String) {
-        viewModelScope.launch { repo.saveMark(name, visitedOn, description) }
+        viewModelScope.launch { report(repo.saveMark(name, visitedOn, description), "Failed to save mark") }
         clearSelection()
     }
 
     fun removeMark(name: String) {
-        viewModelScope.launch { repo.removeMark(name) }
+        viewModelScope.launch { report(repo.removeMark(name), "Failed to remove mark") }
         clearSelection()
+    }
+
+    /** Offline says what to do about it; any other failure gets the web's wording. */
+    private suspend fun report(result: ApiResult<*>, generic: String) {
+        if (result is ApiResult.Failure) _toast.emit(if (result.offline) result.message else generic)
     }
 }

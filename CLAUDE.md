@@ -93,6 +93,14 @@ Follows gv-web's habits page: a date header (prev / next / tap-the-date for a ca
 - **Delete** lives in the edit sheet, with a confirmation. The web has no habit delete in its UI; Android always had one, and a long-press was too easy to hit. It keeps the confirmation (against the web's usual no-confirm rule) because it removes the habit's entire history and nothing brings that back.
 - Card visuals: name, a `Star` for `recording_required` (when on, missing days break the streak; when off, they carry the previous value forward), a frequency pill for non-daily habits, the progress bar (red when over the maximum, green once the target is met), and streaks (fire = current, trophy = longest) — the last two only when a target exists. A non-daily habit with no target shows `weekly: 5` instead.
 
+### Routes feature
+
+Follows gv-web's `/rutas`: a native-Canvas map of Galicia's 313 concellos (`assets/galicia-concellos.json`, a Mercator fit projection), the province filter, and a `visited/total` counter that **follows the filter** (`1/67` for Lugo). Tapping a concello opens its mark sheet (date and notes; Update or Remove). Under the map is the web's **Visited list** — your whole history, oldest first, unaffected by the filter — and tapping an entry opens it.
+
+- Marks are cached in Room so the map still means something offline; saving or removing one is refused offline.
+- **A failed save or remove is spoken.** `RutasViewModel.toast` says "Failed to save mark" / "Failed to remove mark" (or the offline message); the sheet closes either way, as on the web, so a silent failure would read as a success.
+- The counting and the list ordering are pure (`RutasLogic.kt`, `RutasLogicTest`).
+
 ### Calendar feature
 
 Month / week / day over gv-api's mirror of the user's Google calendars, with event CRUD, per-calendar
@@ -124,7 +132,7 @@ rules that bite are:
 ## Testing
 
 - **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test.
-- **Tasks, Habits and Money logic is pure and ported from gv-web** (`dueSoonGrouping.ts`, `planOverlay.ts`, `taskTree.ts`, `habitCard.svelte.ts`, `habitForm.svelte.ts`): keep the two in step, and when one changes, change the other.
+- **Tasks, Habits, Money and Routes logic is pure and ported from gv-web** (`dueSoonGrouping.ts`, `planOverlay.ts`, `taskTree.ts`, `habitCard.svelte.ts`, `habitForm.svelte.ts`, `utils/money.ts`, `overview.svelte.ts`, `transactionForm.svelte.ts`, `CreatePlanFromEventWizard.svelte`, and the counting in `rutas/+page.svelte`): keep the two in step, and when one changes, change the other.
 - JVM unit tests live in `app/src/test/` and run with `./gradlew testFullDebugUnitTest`. They
   cover `PatchBody` (explicit-null semantics), `ApiResult` (offline vs server error),
   `Totp` (RFC 6238 vectors — a TOTP bug is invisible until it locks the app out of its own
@@ -132,7 +140,7 @@ rules that bite are:
   (all-day placement by date rather than instant, exclusive all-day ends, wall-clock-to-instant
   conversion, recurrence presets, lane layout — every one of which renders plausibly while being
   wrong). The Tasks suites (`DueSoonTest`, `TaskBoardTest`, `TaskTreeTest`,
-  `PlanTimelineTest`, `PlanEditingTest`) `HabitLogicTest` and `MoneyLogicTest` pin the same kind of failure: an urgent task under "later",
+  `PlanTimelineTest`, `PlanEditingTest`, `PlanFromEventTest`), `HabitLogicTest`, `MoneyLogicTest` and `RutasLogicTest` pin the same kind of failure: an urgent task under "later",
   a task worked at the wrong hour reported as "not done", a break counted twice.
 
 ## Navigation

@@ -28,7 +28,7 @@ import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
 
 /**
- * Domotics → Lights.
+ * Otros → Lights (gv-web's Domotics → Lights tab; the printers and uptime tabs stay in the browser).
  *
  * Unlike every other tab this one has no cached fallback: a bulb's state is only meaningful
  * live, so with no connection the screen says so rather than showing a stale picture of the

@@ -1,5 +1,14 @@
 package com.gv.app.ui.rutas
 
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -75,32 +84,38 @@ fun RutasScreen(vm: RutasViewModel = viewModel()) {
     val marks by vm.marks.collectAsStateWithLifecycle()
     val activeProvince by vm.activeProvince.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(GvColors.Bg),
-    ) {
-        when (val g = geo) {
-            is GeoState.Loading -> CenteredLoader()
-            is GeoState.Error -> CenteredMessage("Couldn't load the map")
-            is GeoState.Loaded -> {
-                val visible = remember(g.concellos, activeProvince) {
-                    if (activeProvince == null) g.concellos else g.concellos.filter { it.province == activeProvince }
-                }
-                val visited = visible.count { marks.containsKey(it.name) }
+    LaunchedEffect(vm) { vm.toast.collect { snackbar.showSnackbar(it) } }
 
-                Header(visited = visited, total = visible.size)
-                ProvinceFilter(active = activeProvince, onSelect = vm::setProvince)
-                Box(modifier = Modifier.fillMaxSize().weight(1f)) {
-                    MapCanvas(
-                        concellos = g.concellos,
-                        marks = marks,
-                        activeProvince = activeProvince,
-                        onTapConcello = vm::select,
-                    )
+    Box(Modifier.fillMaxSize().background(GvColors.Bg)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            when (val g = geo) {
+                is GeoState.Loading -> CenteredLoader()
+                is GeoState.Error -> CenteredMessage("Couldn't load the map")
+                is GeoState.Loaded -> {
+                    val progress = remember(g.concellos, marks, activeProvince) { progressIn(g.concellos, marks, activeProvince) }
+                    val visited = remember(g.concellos, marks) { visitedItems(g.concellos, marks) }
+
+                    Header(visited = progress.visited, total = progress.total)
+                    ProvinceFilter(active = activeProvince, onSelect = vm::setProvince)
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                        MapCanvas(
+                            concellos = g.concellos,
+                            marks = marks,
+                            activeProvince = activeProvince,
+                            onTapConcello = vm::select,
+                        )
+                    }
+                    // The web's list under the map: your whole history, oldest first. It is
+                    // capped so the map keeps most of the screen.
+                    if (visited.isNotEmpty()) VisitedList(visited, onOpen = vm::select)
                 }
             }
+        }
+
+        SnackbarHost(hostState = snackbar, modifier = Modifier.align(Alignment.BottomCenter)) { data ->
+            Snackbar(snackbarData = data, containerColor = GvColors.Surface, contentColor = GvColors.Text)
         }
     }
 
@@ -112,6 +127,51 @@ fun RutasScreen(vm: RutasViewModel = viewModel()) {
             onSave = { date, desc -> vm.saveMark(name, date, desc) },
             onRemove = { vm.removeMark(name) },
         )
+    }
+}
+
+/** "Visited (n)" — each visit with its date and note; tapping opens it to edit or remove. */
+@Composable
+private fun VisitedList(items: List<VisitedItem>, onOpen: (String) -> Unit) {
+    val spacing = LocalSpacing.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 200.dp)
+            .background(GvColors.BgLight),
+    ) {
+        Text(
+            "Visited (${items.size})",
+            style = MaterialTheme.typography.labelLarge,
+            color = GvColors.Text,
+            modifier = Modifier.padding(horizontal = spacing.xl, vertical = spacing.sm),
+        )
+        LazyColumn(contentPadding = PaddingValues(horizontal = spacing.xl, vertical = spacing.xs)) {
+            items(items, key = { it.name }) { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(item.name) }
+                        .padding(vertical = spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(item.name, style = MaterialTheme.typography.bodyMedium, color = GvColors.Text)
+                        if (item.description.isNotBlank()) {
+                            Text(
+                                item.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = GvColors.TextMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Text(item.date, style = MaterialTheme.typography.labelMedium, color = GvColors.TextMuted)
+                }
+            }
+        }
     }
 }
 
