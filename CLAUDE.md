@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen, in this order — Tasks (Today / Projects following gv-web's flow: a pinned timer with a search picker, tiered Due Soon, and the actual-over-intent plan with block and commitment editing), Finance (overview KPIs + CRUD for transactions, accounts, and categories), Calendar (month/week/day over the Google-calendar mirror, event CRUD, live updates), Habits (list / log / create / edit / delete), and Otros (Lights, Rutas, and the daily Spotify alarm). Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
+GV-Android is the Android client for gestor-vida. The app currently contains: auth (login + 2FA) and a tabbed **Home** screen, in this order — Tasks (Today / Projects following gv-web's flow: a pinned timer with a search picker, tiered Due Soon, and the actual-over-intent plan with block and commitment editing), Finance (the web's summary tiles, recent transactions or one account's history, and CRUD for transactions, accounts and categories), Calendar (month/week/day over the Google-calendar mirror, event CRUD, live updates), Habits (list / log / create / edit / delete), and Otros (Lights, Rutas, and the daily Spotify alarm). Single-module Kotlin app using Jetpack Compose, targeting SDK 35.
 
 ## Build & Development Commands
 
@@ -63,7 +63,7 @@ tests), `./gradlew connectedFullDebugAndroidTest` (instrumented).
 - **domain/model/** — `Models.kt` holds the auth DTOs (`LoginRequest`, `TwoFactorRequest`, `TokenResponse`, `ErrorResponse`); `Habit.kt` holds the habit DTOs; `Money.kt` holds `Account`, `Category`, `Transaction`, `Overview*` and money request bodies; `Calendar.kt` holds the calendar domain — `GoogleCalendar`, `CalendarAccount`, `CalendarEvent`, `Create`/`Update`/`Move` request bodies, and the `EventScope` / `SendUpdates` constants; `Task.kt` holds the task domain — `TaskByDueDateResponse` (with the server-computed urgency fields), `TaskFullResponse`, `ActiveTreeNode`, `TodoResponse`, `TimeEntryResponse`, `ActiveTimeEntryResponse`, `TimeEntrySummaryResponse`, `ProjectListItem`, plus request bodies; `Plan.kt` holds `PlanBlockResponse`, `PlanTodayResponse`, `RecurringCommitmentResponse`, `DayFreeBusy` and their request bodies. Field names use snake_case to match the API JSON directly via Gson defaults.
 - **alarm/** — Daily alarm feature. `AlarmPreferences` (SharedPreferences-backed `StateFlow<AlarmConfig>` with hour/minute/enabled + selected playlist URI/name/imageUrl), `AlarmScheduler` (`AlarmManager.setExactAndAllowWhileIdle` chained day-to-day), `AlarmTriggerReceiver` (BroadcastReceiver: starts the service and re-arms next day).
 - **spotify/** — All Spotify integration in a single file `Spotify.kt`: `SpotifyAlarm` foreground Service, `SpotifyAuth` (PKCE OAuth state machine + token refresh), `SpotifyAuthCallbackActivity` (catches the `com.gv.app://spotify-callback` redirect), Retrofit Web API client, and the public `Spotify` entry point (`Spotify.state`, `Spotify.startLogin`, `Spotify.listMyPlaylists`).
-- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of five tabs: Tasks, Finance, Calendar, Habits, Otros; opens on Tasks), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard + HabitFormSheet + HabitLogic — a day's habits, swipeable; create / edit / log), `tasks/` (two tabs, Today | Projects, mirroring the web: `TasksScreen` shell + `TimerPanel`/`TaskPickerSheet` + `TodayTab` = `DueSoonSection` + `PlanSection`, `ProjectsTab`, and the editors; `TasksViewModel` and `PlanViewModel`; the ordering and plan logic is pure and unit-tested in `DueSoon.kt`, `TaskBoard.kt`, `TaskTree.kt`, `PlanTimeline.kt`; see `docs/tasks.md`), `calendar/` (CalendarScreen + CalendarViewModel + CalendarViews + EventSheet + CalendarsSheet + CalendarFields + CalendarUtils — month/week/day over gv-api's Google-calendar mirror; see `docs/calendar.md`), `money/` (MoneyScreen + MoneyViewModel + FormSheets + MoneyUtils — three sub-tabs Overview/Accounts/Categories, FAB-driven CRUD via bottom sheets, tree-rendered categories with expand/collapse; see `docs/money.md`), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
+- **ui/** — Compose screens: `login/` (LoginScreen + LoginViewModel), `home/` (`HomeScreen` — Scaffold with a bottom `NavigationBar` of five tabs: Tasks, Finance, Calendar, Habits, Otros; opens on Tasks), `alarm/` (AlarmScreen + AlarmViewModel), `habits/` (HabitsScreen + HabitsViewModel + HabitCard + HabitFormSheet + HabitLogic — a day's habits, swipeable; create / edit / log), `tasks/` (two tabs, Today | Projects, mirroring the web: `TasksScreen` shell + `TimerPanel`/`TaskPickerSheet` + `TodayTab` = `DueSoonSection` + `PlanSection`, `ProjectsTab`, and the editors; `TasksViewModel` and `PlanViewModel`; the ordering and plan logic is pure and unit-tested in `DueSoon.kt`, `TaskBoard.kt`, `TaskTree.kt`, `PlanTimeline.kt`; see `docs/tasks.md`), `calendar/` (CalendarScreen + CalendarViewModel + CalendarViews + EventSheet + CalendarsSheet + CalendarFields + CalendarUtils — month/week/day over gv-api's Google-calendar mirror; see `docs/calendar.md`), `money/` (MoneyScreen shell + OverviewTab / AccountsTab / CategoriesTab + the three form sheets, MoneyViewModel over `MoneyRepository`, and the pure rules in MoneyLogic; header buttons rather than a FAB, immediate deletes; see `docs/money.md`), `navigation/` (`AppNavigation.kt` — Login ↔ Home NavHost where the `home` route renders `HomeScreen`), `theme/` (see Theme).
 
 **Key patterns:**
 - **Auth routing**: `TokenManager.tokenFlow` drives navigation inside `AppNavigation`. On token change, the NavHost navigates between `login` and `home` routes.
@@ -87,7 +87,7 @@ tests), `./gradlew connectedFullDebugAndroidTest` (instrumented).
 Follows gv-web's habits page: a date header (prev / next / tap-the-date for a calendar / jump to today, plus swipe), a **New habit** button, and a card per habit with a pen to edit it. Not ported, on purpose: the history chart.
 
 - **API**: `GET /habits?date=`, `POST /habits`, `PUT /habits/{id}` (a full replace — an emptied target or description is cleared, so omitted nulls are correct), `POST /habits/log` (upsert `{habit_id, date, value}`, an *absolute* value), `DELETE /habits/{id}`.
-- **`HabitLogic.kt` is pure and ported from the web** (`habitCard.svelte.ts`, `habitForm.svelte.ts`) and unit-tested: display/optimistic values, the progress fraction (a min–max range is measured *within* the range, a single target against itself), target met / exceeded, the `5 (3-8)` / `5/3` wording, and the form check (name required and ≤ 40, targets numeric and not negative, min ≤ max, a decimal comma accepted — the decimal keypad on a Spanish-locale phone types one).
+- **`HabitLogic.kt` is pure and ported from the web** (`habitCard.svelte.ts`, `habitForm.svelte.ts`, `money.ts`, `overview.svelte.ts`, `transactionForm.svelte.ts`) and unit-tested: display/optimistic values, the progress fraction (a min–max range is measured *within* the range, a single target against itself), target met / exceeded, the `5 (3-8)` / `5/3` wording, and the form check (name required and ≤ 40, targets numeric and not negative, min ≤ max, a decimal comma accepted — the decimal keypad on a Spanish-locale phone types one).
 - **Optimistic logging**: a tap sets a *pending* value in `HabitsViewModel` that the card shows at once, recomputing progress and streak-independent period totals from it (`period_value + (pending - log_value)`). The write waits 300 ms so a run of taps is one request carrying the final absolute value; the pending value is dropped once the day has been re-read, or on failure (which puts the card back on what the server holds and toasts the error). Typed input commits when typing pauses (800 ms) or on Done — never per keystroke, which would log `1` on the way to `12`.
 - **Create / edit** in `HabitFormSheet`: name, description, frequency (daily / weekly / monthly), min and max target, recording-required. The day is re-read after a save so the habit appears with its server-computed streaks.
 - **Delete** lives in the edit sheet, with a confirmation. The web has no habit delete in its UI; Android always had one, and a long-press was too easy to hit. It keeps the confirmation (against the web's usual no-confirm rule) because it removes the habit's entire history and nothing brings that back.
@@ -121,7 +121,7 @@ rules that bite are:
 ## Testing
 
 - **Framework**: JUnit 4 + MockK + Coroutines Test + Compose UI Test.
-- **Tasks and Habits logic is pure and ported from gv-web** (`dueSoonGrouping.ts`, `planOverlay.ts`, `taskTree.ts`, `habitCard.svelte.ts`, `habitForm.svelte.ts`): keep the two in step, and when one changes, change the other.
+- **Tasks, Habits and Money logic is pure and ported from gv-web** (`dueSoonGrouping.ts`, `planOverlay.ts`, `taskTree.ts`, `habitCard.svelte.ts`, `habitForm.svelte.ts`): keep the two in step, and when one changes, change the other.
 - JVM unit tests live in `app/src/test/` and run with `./gradlew testFullDebugUnitTest`. They
   cover `PatchBody` (explicit-null semantics), `ApiResult` (offline vs server error),
   `Totp` (RFC 6238 vectors — a TOTP bug is invisible until it locks the app out of its own
@@ -129,7 +129,7 @@ rules that bite are:
   (all-day placement by date rather than instant, exclusive all-day ends, wall-clock-to-instant
   conversion, recurrence presets, lane layout — every one of which renders plausibly while being
   wrong). The Tasks suites (`DueSoonTest`, `TaskBoardTest`, `TaskTreeTest`,
-  `PlanTimelineTest`, `PlanEditingTest`) and `HabitLogicTest` pin the same kind of failure: an urgent task under "later",
+  `PlanTimelineTest`, `PlanEditingTest`) `HabitLogicTest` and `MoneyLogicTest` pin the same kind of failure: an urgent task under "later",
   a task worked at the wrong hour reported as "not done", a break counted twice.
 
 ## Navigation
@@ -155,8 +155,9 @@ The app talks to **gv-api** and nothing else. All logic lives there; this app is
 - **ViewModels surface write failures** through their toast flow. The offline banner explains
   the state, but a tap that silently does nothing reads as a bug.
 - **Lights keep no cache at all** — a stale bulb state invites tapping a control that cannot
-  run, and whether the light is on is visible from the sofa. The **calendar does** cache, for the
-  opposite reason: a stale calendar is still the answer to "what have I got on today".
+  run, and whether the light is on is visible from the sofa. **Money keeps none either**: a stale
+  balance is worse than none, so with no connection it says it cannot load. The **calendar does**
+  cache, for the opposite reason: a stale calendar is still the answer to "what have I got on today".
 
 ## Auth — automatic login
 

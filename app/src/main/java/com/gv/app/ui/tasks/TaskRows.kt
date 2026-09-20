@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,9 +22,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gv.app.domain.model.TaskByDueDateResponse
@@ -111,25 +106,6 @@ internal fun TimerActions(
         }
     } else {
         SmallButton("Timer", onStart, enabled = !blocked, icon = Icons.Filled.PlayArrow)
-    }
-}
-
-@Composable
-internal fun DayDivider(label: String, highlight: Boolean) {
-    val spacing = LocalSpacing.current
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = spacing.md, bottom = spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (highlight) GvColors.Primary else GvColors.TextMuted,
-            fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = spacing.md),
-        )
-        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
     }
 }
 

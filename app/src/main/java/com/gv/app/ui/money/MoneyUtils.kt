@@ -1,22 +1,26 @@
 package com.gv.app.ui.money
 
 import com.gv.app.domain.model.Category
-import java.text.NumberFormat
-import java.util.Currency
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
 import java.util.Locale
 
-private val moneyFormatter: NumberFormat = NumberFormat.getCurrencyInstance(Locale.UK).apply {
-    currency = Currency.getInstance("EUR")
-    minimumFractionDigits = 2
-    maximumFractionDigits = 2
+/**
+ * `1.234,56 €` — gv-web's `formatMoney` (es-ES, EUR, grouping always). Everything is EUR; there
+ * is no per-account currency. A `DecimalFormat` is built per call because it is not thread-safe,
+ * and the pattern is spelled out because a locale's own currency format drops the grouping
+ * separator on four-digit numbers.
+ */
+fun formatMoney(amount: Double): String {
+    val format = DecimalFormat("#,##0.00", DecimalFormatSymbols(Locale("es", "ES")))
+    return format.format(amount) + "\u00A0€"
 }
 
+/** Amounts arrive as decimal strings; one that will not parse is shown as it came. */
 fun formatMoney(amount: String): String {
     val n = amount.toDoubleOrNull() ?: return amount
-    return moneyFormatter.format(n)
+    return formatMoney(n)
 }
-
-fun formatMoney(amount: Double): String = moneyFormatter.format(amount)
 
 data class CategoryOption(
     val id: Int,
@@ -106,4 +110,38 @@ fun amountSign(type: String): AmountSign = when (type) {
     "income" -> AmountSign.POS
     "expense" -> AmountSign.NEG
     else -> AmountSign.NEU
+}
+
+/** [id] and every category below it, so a parent picker cannot offer itself or a descendant. */
+fun collectDescendantIds(categories: List<Category>, id: Int): Set<Int> {
+    val banned = mutableSetOf(id)
+    var added = true
+    while (added) {
+        added = false
+        for (c in categories) {
+            val parent = c.parent_id
+            if (parent != null && parent in banned && c.id !in banned) {
+                banned.add(c.id)
+                added = true
+            }
+        }
+    }
+    return banned
+}
+
+/**
+ * The rows that show given which branches are open: a row is visible when every ancestor is in
+ * [expanded]. Branches start closed, so this is what the tree looks like before anything is tapped.
+ */
+fun visibleCategoryRows(rows: List<CategoryTreeRow>, expanded: Set<Int>): List<CategoryTreeRow> {
+    val out = mutableListOf<CategoryTreeRow>()
+    var hideBelowDepth: Int? = null
+    for (row in rows) {
+        val hidden = hideBelowDepth
+        if (hidden != null && row.depth > hidden) continue
+        hideBelowDepth = null
+        out.add(row)
+        if (row.hasChildren && row.category.id !in expanded) hideBelowDepth = row.depth
+    }
+    return out
 }

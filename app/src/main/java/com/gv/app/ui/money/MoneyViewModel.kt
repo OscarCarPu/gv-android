@@ -3,31 +3,27 @@ package com.gv.app.ui.money
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.gv.app.data.api.ApiService
-import com.gv.app.data.api.RetrofitClient
+import com.gv.app.container
+import com.gv.app.data.repository.ApiResult
+import com.gv.app.data.repository.MoneyData
+import com.gv.app.data.repository.MoneyRepository
 import com.gv.app.domain.model.Account
 import com.gv.app.domain.model.Category
-import com.gv.app.domain.model.CreateAccountRequest
-import com.gv.app.domain.model.CreateCategoryRequest
 import com.gv.app.domain.model.CreateTransactionRequest
-import com.gv.app.domain.model.Overview
-import com.gv.app.domain.model.UpdateAccountRequest
-import com.gv.app.domain.model.UpdateCategoryRequest
+import com.gv.app.domain.model.OverviewTransaction
+import com.gv.app.domain.model.Transaction
 import com.gv.app.domain.model.UpdateTransactionRequest
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class MoneyData(
-    val overview: Overview,
-    val accounts: List<Account>,
-    val categories: List<Category>,
-)
 
 sealed class MoneyUiState {
     data object Loading : MoneyUiState()
@@ -35,9 +31,33 @@ sealed class MoneyUiState {
     data class Error(val message: String) : MoneyUiState()
 }
 
+/**
+ * The transactions list on the Overview tab: the last 30 days, or — with an account picked —
+ * that account's whole history, folded to [TX_FOLD_LIMIT] and unfolded [TX_EXPAND_STEP] at a time.
+ */
+data class TxListState(
+    val visible: List<OverviewTransaction> = emptyList(),
+    val total: Int = 0,
+    val filteringAccountId: Int? = null,
+    val loading: Boolean = false,
+) {
+    val filtering: Boolean get() = filteringAccountId != null
+    val hasMore: Boolean get() = visible.size < total
+    val remaining: Int get() = total - visible.size
+}
+
+/**
+ * The Money screen. Online-first: reads are live (there is no cache — see [MoneyRepository]),
+ * writes are refused offline, and after every write everything is re-read, because account
+ * totals are maintained by a database trigger the client cannot second-guess.
+ *
+ * Deletes are immediate, as on the web: no confirmation dialog. An account with transactions and
+ * a category still in use cannot be deleted at all — the API answers 409, and it is reported by
+ * name rather than as a generic error.
+ */
 class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val api: ApiService = RetrofitClient.apiService
+    private val repo: MoneyRepository = app.container.moneyRepository
 
     private val _state = MutableStateFlow<MoneyUiState>(MoneyUiState.Loading)
     val state: StateFlow<MoneyUiState> = _state.asStateFlow()
@@ -45,191 +65,174 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     private val _toast = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val toast: SharedFlow<String> = _toast.asSharedFlow()
 
+    private val selectedAccountId = MutableStateFlow<Int?>(null)
+    private val history = MutableStateFlow<List<OverviewTransaction>>(emptyList())
+    private val loadingHistory = MutableStateFlow(false)
+    private val visibleCount = MutableStateFlow(TX_FOLD_LIMIT)
+
+    val transactions: StateFlow<TxListState> =
+        combine(_state, selectedAccountId, history, loadingHistory, visibleCount) { state, account, hist, loading, count ->
+            val source = if (account != null) hist else (state as? MoneyUiState.Loaded)?.data?.overview?.recent_transactions.orEmpty()
+            TxListState(
+                visible = source.take(count),
+                total = source.size,
+                filteringAccountId = account,
+                loading = loading,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TxListState())
+
     init {
         refresh()
     }
 
+    // ----- Reads -----
+
     fun refresh() {
-        viewModelScope.launch {
-            if (_state.value !is MoneyUiState.Loaded) {
-                _state.value = MoneyUiState.Loading
-            }
-            try {
-                val (overview, accounts, categories) = coroutineLoad()
-                _state.value = MoneyUiState.Loaded(MoneyData(overview, accounts, categories))
-            } catch (e: Exception) {
-                if (_state.value !is MoneyUiState.Loaded) {
-                    _state.value = MoneyUiState.Error(e.message ?: "Network error")
-                } else {
-                    _toast.emit(e.message ?: "Network error")
-                }
-            }
-        }
+        viewModelScope.launch { reload() }
     }
 
-    private suspend fun coroutineLoad(): Triple<Overview, List<Account>, List<Category>> {
-        return kotlinx.coroutines.coroutineScope {
-            val overviewDef = async {
-                val r = api.getFinanceOverview()
-                if (!r.isSuccessful) error("Failed to load overview")
-                r.body()!!
-            }
-            val accountsDef = async {
-                val r = api.listAccounts()
-                if (!r.isSuccessful) error("Failed to load accounts")
-                r.body() ?: emptyList()
-            }
-            val categoriesDef = async {
-                val r = api.listCategories()
-                if (!r.isSuccessful) error("Failed to load categories")
-                r.body() ?: emptyList()
-            }
-            Triple(overviewDef.await(), accountsDef.await(), categoriesDef.await())
+    /** Re-read everything, and the picked account's history if one is picked. */
+    private suspend fun reload() {
+        val first = _state.value !is MoneyUiState.Loaded
+        if (first) _state.value = MoneyUiState.Loading
+        when (val r = repo.load()) {
+            is ApiResult.Success -> _state.value = MoneyUiState.Loaded(r.data)
+            is ApiResult.Failure ->
+                if (first) _state.value = MoneyUiState.Error(r.message) else _toast.emit(r.message)
         }
+        if (selectedAccountId.value != null) loadHistory()
     }
 
-    // --- Transactions ---
+    /** Switch the list to an account's full history, or back to the recent list with null. */
+    fun selectAccount(id: Int?) {
+        selectedAccountId.value = id
+        visibleCount.value = TX_FOLD_LIMIT
+        viewModelScope.launch { loadHistory() }
+    }
 
-    fun loadTransaction(id: Int, onLoaded: (com.gv.app.domain.model.Transaction?) -> Unit) {
+    fun showMore() = visibleCount.update { it + TX_EXPAND_STEP }
+
+    private suspend fun loadHistory() {
+        val id = selectedAccountId.value
+        val data = (_state.value as? MoneyUiState.Loaded)?.data
+        if (id == null || data == null) {
+            history.value = emptyList()
+            return
+        }
+        loadingHistory.value = true
+        when (val r = repo.accountHistory(id)) {
+            is ApiResult.Success ->
+                history.value = r.data.map { toOverviewTransaction(it, data.accounts, data.categories) }
+            is ApiResult.Failure -> {
+                _toast.emit(r.message)
+                history.value = emptyList()
+            }
+        }
+        loadingHistory.value = false
+    }
+
+    // ----- Transactions -----
+
+    /** The overview rows are name-based; editing needs the real ids, so the full row is fetched. */
+    fun loadTransaction(id: Int, onLoaded: (Transaction?) -> Unit) {
         viewModelScope.launch {
-            try {
-                val r = api.getTransaction(id)
-                if (r.isSuccessful) {
-                    onLoaded(r.body())
-                } else {
-                    _toast.emit("Failed to load transaction")
+            when (val r = repo.transaction(id)) {
+                is ApiResult.Success -> onLoaded(r.data)
+                is ApiResult.Failure -> {
+                    _toast.emit(r.message)
                     onLoaded(null)
                 }
-            } catch (e: Exception) {
-                _toast.emit(e.message ?: "Network error")
-                onLoaded(null)
             }
         }
     }
 
-    fun saveTransaction(id: Int?, req: CreateTransactionRequest, onDone: (Boolean) -> Unit) {
+    fun saveTransaction(existingId: Int?, form: TransactionFormCheck.Ok, occurredAtIso: String, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
-            try {
-                val r = if (id != null) {
-                    api.updateTransaction(
-                        id,
-                        UpdateTransactionRequest(
-                            type = req.type,
-                            amount = req.amount,
-                            account_id = req.account_id,
-                            to_account_id = req.to_account_id,
-                            category_id = req.category_id,
-                            description = req.description,
-                            occurred_at = req.occurred_at ?: "",
-                        ),
-                    )
-                } else {
-                    api.createTransaction(req)
-                }
-                if (r.isSuccessful) {
-                    onDone(true)
-                    refresh()
-                } else {
-                    _toast.emit("Failed to save transaction")
-                    onDone(false)
-                }
-            } catch (e: Exception) {
-                _toast.emit(e.message ?: "Network error")
-                onDone(false)
+            val result = if (existingId != null) {
+                repo.updateTransaction(
+                    existingId,
+                    UpdateTransactionRequest(
+                        type = form.type,
+                        amount = form.amount,
+                        account_id = form.accountId,
+                        to_account_id = form.toAccountId,
+                        category_id = form.categoryId,
+                        description = form.description,
+                        occurred_at = occurredAtIso,
+                    ),
+                )
+            } else {
+                repo.createTransaction(
+                    CreateTransactionRequest(
+                        type = form.type,
+                        amount = form.amount,
+                        account_id = form.accountId,
+                        to_account_id = form.toAccountId,
+                        category_id = form.categoryId,
+                        description = form.description,
+                        occurred_at = occurredAtIso,
+                    ),
+                )
             }
+            finishSave(result, onDone)
         }
     }
 
     fun deleteTransaction(id: Int) {
-        viewModelScope.launch {
-            try {
-                val r = api.deleteTransaction(id)
-                if (r.isSuccessful) {
-                    refresh()
-                } else {
-                    _toast.emit("Failed to delete transaction")
-                }
-            } catch (e: Exception) {
-                _toast.emit(e.message ?: "Network error")
-            }
-        }
+        viewModelScope.launch { finishDelete(Deletable.TRANSACTION, repo.deleteTransaction(id)) }
     }
 
-    // --- Accounts ---
+    // ----- Accounts -----
 
     fun saveAccount(id: Int?, name: String, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
-            try {
-                val r = if (id != null) {
-                    api.updateAccount(id, UpdateAccountRequest(name))
-                } else {
-                    api.createAccount(CreateAccountRequest(name))
-                }
-                if (r.isSuccessful) {
-                    onDone(true)
-                    refresh()
-                } else {
-                    _toast.emit("Failed to save account")
-                    onDone(false)
-                }
-            } catch (e: Exception) {
-                _toast.emit(e.message ?: "Network error")
-                onDone(false)
-            }
+            finishSave(if (id != null) repo.updateAccount(id, name) else repo.createAccount(name), onDone)
         }
     }
 
-    fun deleteAccount(id: Int) {
+    fun deleteAccount(account: Account) {
         viewModelScope.launch {
-            try {
-                val r = api.deleteAccount(id)
-                if (r.isSuccessful) {
-                    refresh()
-                } else {
-                    _toast.emit("Failed to delete account (may have transactions)")
-                }
-            } catch (e: Exception) {
-                _toast.emit(e.message ?: "Network error")
-            }
+            // Deleting the account being viewed would leave the list filtered on nothing.
+            if (selectedAccountId.value == account.id) selectedAccountId.value = null
+            finishDelete(Deletable.ACCOUNT, repo.deleteAccount(account.id))
         }
     }
 
-    // --- Categories ---
+    // ----- Categories -----
 
     fun saveCategory(id: Int?, name: String, type: String, parentId: Int?, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
-            try {
-                val r = if (id != null) {
-                    api.updateCategory(id, UpdateCategoryRequest(name, parentId, type))
-                } else {
-                    api.createCategory(CreateCategoryRequest(name, parentId, type))
-                }
-                if (r.isSuccessful) {
-                    onDone(true)
-                    refresh()
-                } else {
-                    _toast.emit("Failed to save category")
-                    onDone(false)
-                }
-            } catch (e: Exception) {
-                _toast.emit(e.message ?: "Network error")
+            finishSave(
+                if (id != null) repo.updateCategory(id, name, type, parentId) else repo.createCategory(name, type, parentId),
+                onDone,
+            )
+        }
+    }
+
+    fun deleteCategory(category: Category) {
+        viewModelScope.launch { finishDelete(Deletable.CATEGORY, repo.deleteCategory(category.id)) }
+    }
+
+    // ----- Shared -----
+
+    /** A save's failure is spoken in the server's own words; success re-reads everything. */
+    private suspend fun finishSave(result: ApiResult<Unit>, onDone: (Boolean) -> Unit) {
+        when (result) {
+            is ApiResult.Success -> {
+                onDone(true)
+                reload()
+            }
+            is ApiResult.Failure -> {
+                _toast.emit(result.message)
                 onDone(false)
             }
         }
     }
 
-    fun deleteCategory(id: Int) {
-        viewModelScope.launch {
-            try {
-                val r = api.deleteCategory(id)
-                if (r.isSuccessful) {
-                    refresh()
-                } else {
-                    _toast.emit("Failed to delete category (may be in use)")
-                }
-            } catch (e: Exception) {
-                _toast.emit(e.message ?: "Network error")
-            }
+    private suspend fun finishDelete(kind: Deletable, result: ApiResult<Unit>) {
+        when (result) {
+            is ApiResult.Success -> reload()
+            is ApiResult.Failure -> _toast.emit(deleteFailureMessage(kind, result))
         }
     }
 }

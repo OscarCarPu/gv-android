@@ -12,6 +12,7 @@ import com.gv.app.data.local.db.GvDatabase
 import com.gv.app.data.repository.CalendarRepository
 import com.gv.app.data.repository.HabitRepository
 import com.gv.app.data.repository.LightsRepository
+import com.gv.app.data.repository.MoneyRepository
 import com.gv.app.data.repository.OnlineGate
 import com.gv.app.data.repository.PlanRepository
 import com.gv.app.data.repository.RutasRepository
@@ -64,6 +65,10 @@ class AppContainer(context: Context) {
 
     val taskRepository: TaskRepository =
         TaskRepository(apiService, database, database.taskDao(), onlineGate)
+
+    /** No cache, like Lights: a stale balance is worse than none. See [MoneyRepository]. */
+    val moneyRepository: MoneyRepository =
+        MoneyRepository(apiService, onlineGate)
 
     val planRepository: PlanRepository =
         PlanRepository(apiService, onlineGate, taskRepository)

@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -111,3 +115,47 @@ internal fun gvFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors
     unfocusedLabelColor = GvColors.TextMuted,
     cursorColor = GvColors.Primary,
 )
+
+@Composable
+internal fun DayDivider(label: String, highlight: Boolean) {
+    val spacing = LocalSpacing.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = spacing.md, bottom = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (highlight) GvColors.Primary else GvColors.TextMuted,
+            fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.padding(horizontal = spacing.md),
+        )
+        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
+    }
+}
+
+/** The line — pill — line control that unfolds the next batch, as on the web. */
+@Composable
+internal fun ShowMore(remaining: Int, onClick: () -> Unit) {
+    val spacing = LocalSpacing.current
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
+        Row(
+            modifier = Modifier
+                .padding(horizontal = spacing.md)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, GvColors.BorderLight, RoundedCornerShape(16.dp))
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = GvColors.TextMuted, modifier = Modifier.size(16.dp))
+            Text("$remaining more", style = MaterialTheme.typography.labelMedium, color = GvColors.TextMuted)
+        }
+        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
+    }
+}

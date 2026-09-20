@@ -1,160 +1,86 @@
 # Money (Finance)
 
-Source: `app/src/main/java/com/gv/app/ui/money/`, `app/src/main/java/com/gv/app/domain/model/Money.kt`, `app/src/main/java/com/gv/app/data/api/ApiService.kt`
+Source: `app/src/main/java/com/gv/app/ui/money/`, `domain/model/Money.kt`, `data/repository/MoneyRepository.kt`, `data/api/ApiService.kt`
 
-Read-and-write client for the `gv-api` `/finance/*` endpoints. Surfaces the monthly KPIs from the web `/money` page, plus CRUD for transactions, accounts, and categories. Charts and stats sheets from the web (net worth, breakdown, monthly trend, estimation) are intentionally out of scope on Android.
+Client for the `gv-api` `/finance/*` endpoints, following gv-web's `/money` page: the six summary tiles, the recent transactions (or one account's whole history), and accounts and categories with create / edit / delete. The stats sheets and charts from the web (net worth, breakdown, monthly trend, estimation) are deliberately not ported.
 
 The feature is reached via the **Finance** tab in `HomeScreen`'s bottom navigation.
 
+Like the rest of the app it is **online-first, offline read-only** — with one difference: **it keeps no cache.** Balances are what you decide things by, and a stale one is worse than none, so with no connection the screen says it cannot load rather than show last week's total. Every write goes to the server and is refused offline (`OnlineGate`).
+
 ---
 
-## Components
+## Layout
+
+Three swipeable pages under a tab bar — **Overview**, **Accounts**, **Categories** — each with the web's header button (**+ Transaction**, **New**) rather than a floating one.
+
+### Overview (`OverviewTab.kt`)
+
+- **Summary** — six tiles in the web's order and words: Total accounts, Monthly income, Monthly expenses, Monthly balance, Savings, % vs prev month. **+ Transaction** is disabled until there is an account to put one on.
+- **Transactions** — the last 30 days, grouped by day (`Today` / `Yesterday` / `EEE, d MMM`), or, with an account picked in the filter beside the title, **that account's whole history** (`GET /finance/transactions?account_id=`). The list folds at **15** and "N more" unfolds 10 at a time.
+- A row shows a type badge (In / Out / Tx), the description or category, `source → destination` for a transfer, and the signed amount. **Tapping a row** fetches the full `Transaction` (`GET /finance/transactions/{id}`) and opens the edit sheet — the overview rows are name-based and lack the ids the form needs. The trash icon deletes at once.
+
+### Accounts (`AccountsTab.kt`)
+
+Name and total (red when negative), edit, delete. Deleting an account that has transactions is refused by the API (`409`) and reported as "Account has associated transactions".
+
+### Categories (`CategoriesTab.kt`)
+
+Grouped Income / Expenses / Transfers, each a tree that **starts collapsed**, as on the web: a chevron opens a branch, and `visibleCategoryRows` shows a row only when every ancestor is open. Deleting a category still in use is refused (`409`) and reported as "Category is in use".
+
+---
+
+## Deletes are immediate
+
+As on the web: no confirmation dialog. This is safe for accounts and categories because the API refuses to delete one that is in use, so only empty ones can go. A transaction delete *is* final, and the trash icon sits on every row — but re-entering a transaction is cheap and the account total (kept by a database trigger) corrects itself either way. Habits keep a confirmation, because deleting one takes its whole history with it.
+
+---
+
+## Money rules that are easy to get wrong (`MoneyLogic.kt`, `MoneyUtils.kt`)
+
+All pure, ported from gv-web, unit-tested (`MoneyLogicTest`).
+
+- **Amounts are strings**, `NUMERIC(15,2)` on the wire. They are parsed only at display or arithmetic, and sent back as a two-decimal string (`Locale.ROOT`, `"%.2f"`) so the JSON never contains a comma.
+- **Display is es-ES**: `1.234,56 €`, grouping always — spelled out as a `DecimalFormat` pattern because a locale's own currency format drops the separator on four digits. Percentages use a dot whatever the phone's locale.
+- **A decimal comma is a decimal point** in the amount field: the decimal keypad on a Spanish-locale phone types one, and `"12,5".toDouble()` is not a number.
+- **`occurred_at` is a wall-clock stamp, not an instant.** A transaction entered at 10:00 is stored `10:00Z` and read back by taking the digits (`wallClockToIso` / `isoToWallClock`) — the web's `toISOString` / `toLocalDatetime`, and the same idea as a task's `due_at`. Converting it to or from the phone's zone would put a purchase made at 00:30 on the previous day (the list groups by the first ten characters) and show a web-created row two hours out.
+- **The KPIs** (`deriveOverviewKpis`): savings is `balance / income` (0 with no income); the change against last month is divided by `|previous balance|`, not the balance itself, so going from −100 to −50 reads as an improvement.
+- **The transaction form** (`checkTransactionForm`): a positive amount, a source account, a category for every type (whose own type must match — the option list enforces it), and for a transfer a destination different from the source.
+- **Delete conflicts** (`deleteFailureMessage`): a `409` whose message names `transactions` (account) or `referenced` (category) is "in use", not a generic error; offline says so.
+
+---
+
+## Files
 
 | File | Responsibility |
 |------|---------------|
-| `domain/model/Money.kt` | DTOs: `Account`, `Category`, `Transaction`, `OverviewTransaction`, `OverviewMonth`, `Overview`, plus `Create*` / `Update*` request bodies. snake_case to match the API JSON via Gson defaults. |
-| `data/api/ApiService.kt` | Retrofit endpoints under `/finance/`: `overview`, `accounts` CRUD, `categories` CRUD, `transactions` CRUD + GET-by-id. |
-| `ui/money/MoneyViewModel.kt` | `state: StateFlow<MoneyUiState>` (Loading / Loaded(MoneyData) / Error). Loads overview + accounts + categories in parallel on init and after every successful mutation. Emits `toast: SharedFlow<String>` for inline errors. |
-| `ui/money/MoneyScreen.kt` | Single-screen entry. Three sub-tabs (Overview / Accounts / Categories) and a context-aware FAB that opens the relevant create sheet. |
-| `ui/money/FormSheets.kt` | `ModalBottomSheet`s: `TransactionFormSheet`, `AccountFormSheet`, `CategoryFormSheet`. Shared `DropdownField` (sheet-based picker), `DateField` (Material3 `DatePicker`), `TypeSelector` (Income / Expense / Transfer chips), and `GvTextField`. |
-| `ui/money/MoneyUtils.kt` | `formatMoney` (locale-pinned currency formatting), `buildCategoryOptions` (flat indented list for dropdowns), `buildCategoryTreeRows` (tree rows with connector metadata for the Categories tab), plus type-label and amount-sign helpers. |
-
----
-
-## Sub-tabs
-
-`MoneyScreen` renders a top tab bar (`OVERVIEW` / `ACCOUNTS` / `CATEGORIES`, persisted via `rememberSaveable`) and the FAB rewires to that tab's create action:
-
-| Tab | FAB action |
-|-----|-----------|
-| Overview | New transaction (with an `AlertDialog` fallback if no accounts exist yet, offering to create one) |
-| Accounts | New account |
-| Categories | New category |
-
-### Overview
-
-Six KPI tiles arranged in a 2-column grid:
-
-| Tile | Source |
-|------|--------|
-| Total accounts | `overview.accounts_total` |
-| Balance (month) | `overview.month.balance`, signed and tinted (green/red) |
-| Income (month) | `overview.month.income`, prefixed `+`, green |
-| Expense (month) | `overview.month.expense`, prefixed `−`, red |
-| Savings rate | `balance / income * 100`, one decimal, signed-tinted |
-| vs previous | `(balance − prev_balance) / |prev_balance| * 100`, or `—` if previous month had a zero balance |
-
-Below the KPIs, `overview.recent_transactions` (last 30 days) is rendered as a list with day dividers (`Today` / `Yesterday` / `EEE, d MMM`) when the `occurred_at` date changes. Each row has a colored type badge (In / Out / Tx), the description-or-category as the primary label, the account chain (`source → destination` for transfers), the signed amount, and a delete button. Tapping the row fetches the full `Transaction` via `GET /finance/transactions/{id}` and opens the edit sheet — `OverviewTransaction` lacks the foreign key ids, so the round-trip is required to pre-fill the form correctly.
-
-### Accounts
-
-Plain list of `Account` cards: name + total (tinted red if negative) + edit + delete. No filters.
-
-### Categories
-
-Visually-clear tree, grouped by transaction type (Income / Expense / Transfer), each group preceded by a colored accent header showing the count.
-
-`buildCategoryTreeRows(categories)` produces `CategoryTreeRow(category, depth, ancestorHasMore, isLast, hasChildren)` entries via DFS, sorted alphabetically per level. `CategoryTreeNode` renders each row with:
-
-- A `Canvas`-drawn connector column on the left: vertical guides for every ancestor that still has more siblings below this row, plus an `├` / `└` branch at this row's column. Lines are tinted with the group's accent color.
-- An expand/collapse chevron for parents (leaves render a placeholder of the same width so columns stay aligned). Collapsed parent ids are stored in a `rememberSaveable` `Set<Int>` that's filtered out by `filterCollapsed` before display.
-- Depth-aware typography: root rows are semibold and full-opacity; children are smaller and slightly muted.
-
----
-
-## Form sheets
-
-All three sheets are `ModalBottomSheet`s opening from the FAB or from a row tap/edit-icon. They share `GvTextField` and `DropdownField` (which itself opens a nested `ModalBottomSheet` rather than a Material dropdown, to stay tappable on small screens).
-
-### TransactionFormSheet
-
-| Field | Notes |
-|-------|-------|
-| Type | `Income` / `Expense` / `Transfer` chip selector. Changing type resets `categoryId` if the new type has no match, and clears `toAccountId` when leaving `Transfer`. |
-| Amount | Decimal keyboard. Parsed via `String.toDoubleOrNull` (so the user must type `.` as the decimal separator). Sent to the API formatted with `Locale.ROOT` `"%.2f"` so the JSON never contains a comma decimal — see the locale section below. |
-| Date | `DatePicker` (Material3). Time component is preserved from `LocalDateTime.now()` for new transactions or from the original `occurred_at` for edits. Serialized as `yyyy-MM-dd'T'HH:mm:ss'Z'` in UTC. |
-| From account | Required. Defaults to the first account. |
-| To account | Only shown when type = `Transfer`. Filtered to exclude the selected source. |
-| Category | Required. Options are filtered to categories whose `type` matches the selected transaction type. |
-| Description | Optional. Trimmed; empty → `null`. |
-
-Validation happens client-side before submit: `amount > 0`, `account_id != null`, `category_id != null`, and for transfers `to_account_id != null && to_account_id != account_id`. Server-side validation in `gv-api` repeats the same checks plus additional invariants (no `to_account_id` on income/expense, etc.).
-
-### AccountFormSheet
-
-Single `name` field, max 40 chars. The backend rejects empty / overlong names with a 400.
-
-### CategoryFormSheet
-
-`name` (≤40) + `type` chip selector + optional `parent_id` dropdown. When editing, the parent options exclude the category itself and its entire descendant subtree (computed by walking `categories` until no more descendants are added) — this prevents creating a cycle. Changing `type` filters parent candidates to the same type.
-
----
-
-## Mutations
-
-All mutations go through `MoneyViewModel`, which calls the API and then `refresh()` on success (re-pulling overview + accounts + categories in parallel). No optimistic UI: server-side balances and tree counts are the source of truth, and a refresh is fast enough that the UI feels responsive.
-
-```
-saveTransaction(id?, req)    POST /finance/transactions     or PUT /finance/transactions/{id}
-deleteTransaction(id)        DELETE /finance/transactions/{id}
-saveAccount(id?, name)       POST /finance/accounts         or PUT /finance/accounts/{id}
-deleteAccount(id)            DELETE /finance/accounts/{id}      (fails 409 if account has transactions)
-saveCategory(id?, name, …)   POST /finance/categories       or PUT /finance/categories/{id}
-deleteCategory(id)           DELETE /finance/categories/{id}    (fails 409 if category is in use)
-```
-
-Delete confirmations are gated by an `AlertDialog` with a red `Delete` button. On failure, the `toast` `SharedFlow` surfaces a snackbar with the cause (`"may have transactions"` / `"may be in use"`).
-
----
-
-## Locale handling
-
-The API speaks JSON with `.` as the decimal separator (shopspring/decimal serializes to a quoted string like `"10.00"`). Spanish-locale devices, however, return `","` from `"%.2f".format(value)` because Kotlin's `String.format` defaults to the device locale — so request bodies must pin the format locale:
-
-```kotlin
-String.format(Locale.ROOT, "%.2f", amt)   // request payload
-```
-
-Display formatting is pinned to `Locale.UK` (English number style with `€` currency) in `MoneyUtils.formatMoney` and in the percentage/date helpers in `MoneyScreen`:
-
-| Item | Format |
-|------|--------|
-| Money | `€10,000.50` (UK locale, EUR currency) |
-| Percent | `12.3%` (UK locale, one decimal) |
-| Day label | `Tue, 5 Mar` / `Today` / `Yesterday` (UK locale) |
-| ISO date sent to API | `2026-05-12T13:45:30Z` (`Locale.ROOT`) |
-
-Mixing display locale (UK) with payload locale (ROOT) is intentional: display is for the user, payload is for a machine.
+| `domain/model/Money.kt` | DTOs: `Account`, `Category`, `Transaction`, `OverviewTransaction`, `Overview`, and `Create*` / `Update*` bodies. snake_case via Gson defaults. |
+| `data/repository/MoneyRepository.kt` | Live reads (overview, accounts, categories in parallel; an account's history) and every write, gated by `OnlineGate`, returning `ApiResult`. |
+| `ui/money/MoneyViewModel.kt` | `state` (Loading / Loaded / Error), `transactions` (the folded list), and every action. Re-reads everything after a write — totals are trigger-maintained. Failures come back on `toast`. |
+| `ui/money/MoneyScreen.kt` | The shell: tab bar, pager, sheets. |
+| `OverviewTab.kt`, `AccountsTab.kt`, `CategoriesTab.kt`, `MoneyRows.kt` | The pages and their rows. |
+| `TransactionFormSheet.kt`, `AccountFormSheet.kt`, `CategoryFormSheet.kt`, `FormFields.kt` | The `ModalBottomSheet` forms and their fields (a sheet-based dropdown, a date field, the type chips). |
+| `MoneyLogic.kt`, `MoneyUtils.kt` | The pure rules above, plus category trees and pickers. |
 
 ---
 
 ## API contract
 
-Endpoints under `/finance/*` are authenticated (Bearer token, injected by the OkHttp interceptor in `RetrofitClient`). All amounts cross the wire as JSON strings via shopspring/decimal serialization; on Android they're modeled as Kotlin `String` and parsed to `Double` only for arithmetic / display.
-
 ```
 GET    /finance/overview                       → Overview
 GET    /finance/accounts                       → Account[]
-POST   /finance/accounts        { name }       → Account
-PUT    /finance/accounts/{id}   { name }       → Account
-DELETE /finance/accounts/{id}                  → 204
+POST   /finance/accounts        { name }
+PUT    /finance/accounts/{id}   { name }
+DELETE /finance/accounts/{id}                  (409 when it has transactions)
 GET    /finance/categories                     → Category[]
 POST   /finance/categories      { name, type, parent_id? }
 PUT    /finance/categories/{id} { name, type, parent_id }
-DELETE /finance/categories/{id}
-GET    /finance/transactions                   → Transaction[]
+DELETE /finance/categories/{id}                (409 when in use)
+GET    /finance/transactions[?account_id=]     → Transaction[]
 GET    /finance/transactions/{id}              → Transaction
 POST   /finance/transactions    CreateTransactionRequest
 PUT    /finance/transactions/{id} UpdateTransactionRequest
 DELETE /finance/transactions/{id}
 ```
 
-Stats endpoints (`/finance/stats/*`) exist server-side but are not wired on Android — the corresponding sheets and charts only live in `gv-web`.
-
----
-
-## Future work
-
-- **Account-scoped transaction list**: `ApiService.listTransactions(accountId?)` is already plumbed but no UI uses it; the Accounts tab could show per-account history.
-- **Stats sheets**: net worth / category breakdown / monthly trend / estimation — port from `gv-web` when there's a clear mobile use case.
-- **Optimistic mutations**: not currently used because re-fetching is cheap; reconsider if latency to the API gets high.
+`occurred_at` is optional on `POST` (the server defaults it) but required on `PUT`; this client always sends it. The `/finance/stats/*` endpoints exist server-side but are not wired here.

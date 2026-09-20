@@ -1,5 +1,7 @@
 package com.gv.app.ui.tasks
 
+import com.gv.app.ui.common.ShowMore
+import com.gv.app.ui.common.DayDivider
 import com.gv.app.ui.common.SmallButton
 import com.gv.app.ui.common.FilterChip
 import com.gv.app.ui.common.EmptyHint
@@ -20,10 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -215,27 +215,3 @@ private fun ProjectFilter(options: List<ProjectOption>, selected: Int?, onSelect
     }
 }
 
-/** The line — pill — line control that unfolds the next batch, as on the web. */
-@Composable
-internal fun ShowMore(remaining: Int, onClick: () -> Unit) {
-    val spacing = LocalSpacing.current
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
-        Row(
-            modifier = Modifier
-                .padding(horizontal = spacing.md)
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, GvColors.BorderLight, RoundedCornerShape(16.dp))
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-        ) {
-            Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = GvColors.TextMuted, modifier = Modifier.size(16.dp))
-            Text("$remaining more", style = MaterialTheme.typography.labelMedium, color = GvColors.TextMuted)
-        }
-        HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
-    }
-}
