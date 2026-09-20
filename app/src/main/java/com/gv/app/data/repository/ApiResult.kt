@@ -37,6 +37,12 @@ sealed interface ApiResult<out T> {
 val ApiResult<*>.isSuccess: Boolean
     get() = this is ApiResult.Success
 
+/** Maps a success's payload while carrying a failure through untouched. */
+inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
+    is ApiResult.Success -> ApiResult.Success(transform(data))
+    is ApiResult.Failure -> this
+}
+
 private val errorGson = Gson()
 
 private fun <T> Response<T>.extractError(): String {

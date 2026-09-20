@@ -30,21 +30,14 @@ fun parseIso(iso: String?): LocalDateTime? {
     }
 }
 
-fun nowIsoUtc(): String =
-    LocalDateTime.now().atZone(ZoneId.systemDefault())
-        .withZoneSameInstant(ZoneId.of("UTC"))
-        .toLocalDateTime()
-        .format(IsoUtcFormatter)
-
 fun localDateTimeToIsoUtc(local: LocalDateTime): String =
     local.atZone(ZoneId.systemDefault())
         .withZoneSameInstant(ZoneId.of("UTC"))
         .toLocalDateTime()
         .format(IsoUtcFormatter)
 
-fun formatRelativeDay(iso: String?): String {
-    if (iso.isNullOrBlank()) return "—"
-    val date = parseIso(iso)?.toLocalDate() ?: return iso
+/** "Today" / "Yesterday" / "Tomorrow", otherwise `EEE, d MMM`. */
+fun formatRelativeDate(date: LocalDate): String {
     val today = LocalDate.now()
     return when (date) {
         today -> "Today"
@@ -52,6 +45,12 @@ fun formatRelativeDay(iso: String?): String {
         today.plusDays(1) -> "Tomorrow"
         else -> date.format(DayLabelFormatter)
     }
+}
+
+fun formatRelativeDay(iso: String?): String {
+    if (iso.isNullOrBlank()) return "—"
+    val date = parseIso(iso)?.toLocalDate() ?: return iso
+    return formatRelativeDate(date)
 }
 
 fun formatShortDate(iso: String?): String {
@@ -72,21 +71,6 @@ fun formatDurationShort(totalSeconds: Long): String {
     val h = totalMinutes / 60
     val m = totalMinutes % 60
     return if (h > 0) "${h}h ${m}m" else "${m}m"
-}
-
-fun isoDateKey(iso: String?): String =
-    iso?.substring(0, 10.coerceAtMost(iso.length)) ?: "no-date"
-
-fun isOverdue(iso: String?): Boolean {
-    if (iso.isNullOrBlank()) return false
-    val date = parseIso(iso)?.toLocalDate() ?: return false
-    return date.isBefore(LocalDate.now())
-}
-
-fun isToday(iso: String?): Boolean {
-    if (iso.isNullOrBlank()) return false
-    val date = parseIso(iso)?.toLocalDate() ?: return false
-    return date == LocalDate.now()
 }
 
 fun statusLabel(startedAt: String?, taskType: String?, recurrence: Int?): String =
@@ -113,8 +97,13 @@ fun taskTypeColor(taskType: String?, started: Boolean): Color = when {
     else -> GvColors.Primary
 }
 
-fun buildRecurringDueAt(recurrence: Int): String {
-    val tomorrow = LocalDate.now().plusDays(recurrence.toLong())
-    val noon = tomorrow.atTime(12, 0)
-    return localDateTimeToIsoUtc(noon)
-}
+
+private val ClockFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
+
+/** Local wall-clock `HH:mm` for an instant in epoch milliseconds. */
+fun formatClock(epochMs: Long, zone: ZoneId = ZoneId.systemDefault()): String =
+    Instant.ofEpochMilli(epochMs).atZone(zone).format(ClockFormatter)
+
+/** Local wall-clock `HH:mm` for an API instant, or `--:--` when it does not parse. */
+fun formatClock(iso: String?): String =
+    parseIso(iso)?.format(ClockFormatter) ?: "--:--"

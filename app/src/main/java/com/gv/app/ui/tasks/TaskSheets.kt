@@ -330,6 +330,8 @@ fun TaskCreateSheet(
     projects: List<ProjectListItem>,
     onDismiss: () -> Unit,
     onCreate: (CreateTaskRequest, startNow: Boolean) -> Unit,
+    /** Opened from a project's "+": the new task starts inside that project. */
+    prefillProjectId: Int? = null,
 ) {
     val spacing = LocalSpacing.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -340,7 +342,7 @@ fun TaskCreateSheet(
     var taskType by remember { mutableStateOf("standard") }
     var recurrence by remember { mutableStateOf("") }
     var priority by remember { mutableStateOf(3) }
-    var projectId by remember { mutableStateOf<Int?>(null) }
+    var projectId by remember { mutableStateOf(prefillProjectId) }
     var startNow by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf(false) }
 

@@ -22,7 +22,7 @@ import androidx.room.RoomDatabase
         CalendarEntity::class,
         CalendarEventEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class GvDatabase : RoomDatabase() {

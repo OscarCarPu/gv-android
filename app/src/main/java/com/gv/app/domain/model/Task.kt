@@ -63,6 +63,13 @@ data class TaskByDueDateResponse(
     val depends_on: List<TaskDepRef>,
     val blocks: List<TaskDepRef>,
     val blocked: Boolean,
+    // Server-computed urgency (see gv-api tasks: estimate vs. free capacity). Decimals arrive as
+    // strings; `start_by` is a plain `YYYY-MM-DD`. Absent in older cached snapshots, which Gson
+    // reads as null / false — the same as "no estimate".
+    val estimate_hours: String? = null,
+    val remaining_hours: String? = null,
+    val start_by: String? = null,
+    val urgent: Boolean = false,
 )
 
 data class ActiveTreeNode(
@@ -167,20 +174,6 @@ data class TimeEntrySummaryResponse(
     val pace: PaceBreakdown,
 )
 
-data class PlanBlockResponse(
-    val id: Int,
-    val started_at: String,
-    val ended_at: String,
-    val task_id: Int?,
-    val task_name: String?,
-    val label: String,
-    val note: String?,
-    val task_type: String?,
-    val task_recurrence: Int?,
-    val task_started_at: String?,
-    val task_finished_at: String?,
-)
-
 /** A time entry joined with its task — the agenda/day-list row shape. */
 data class TimeEntryWithTaskResponse(
     val id: Int,
@@ -203,18 +196,6 @@ data class TaskOption(
     val id: Int,
     val name: String,
     val projectName: String?,
-)
-
-data class PlanTotals(
-    val task_seconds: Long,
-    val free_seconds: Long,
-)
-
-data class PlanTodayResponse(
-    val date: String,
-    val blocks: List<PlanBlockResponse>,
-    val totals: PlanTotals,
-    val budget: TimeEntrySummaryResponse,
 )
 
 data class ProjectListItem(

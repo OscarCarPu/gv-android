@@ -1,97 +1,99 @@
 # Tasks
 
-Source: `app/src/main/java/com/gv/app/ui/tasks/`, `app/src/main/java/com/gv/app/domain/model/Task.kt`, `app/src/main/java/com/gv/app/data/api/ApiService.kt`
+Source: `app/src/main/java/com/gv/app/ui/tasks/`, `domain/model/Task.kt` + `Plan.kt`, `data/repository/TaskRepository.kt` + `PlanRepository.kt`, `data/api/ApiService.kt`
 
-Read-and-write client for the `gv-api` `/tasks/*` and `/plan/*` endpoints. The mobile feature is deliberately a **focused subset** of the gv-web `/tasks` page — same entities and API contract, but the desktop's heavy editing affordances (plan-block editor, dependency selector, time-history charts, agenda sheet, project create) are out of scope. The phone is optimized for "what should I do right now?" and "I'm doing this right now" use cases.
+Client for the `gv-api` `/tasks/*`, `/plan/*` and `/capacity/*` endpoints. The screen follows gv-web's `/tasks` page — same two tabs, same Due Soon ordering, same plan — and the flows a task goes through (start it, finish it, put a timer on it) are the ones the web has. Where the web is a wide page and the phone is not, the *layout* differs (one column, sheets instead of popovers); the logic does not.
 
 The feature lives under the **Tasks** bottom-nav tab in `HomeScreen`.
 
+Like the rest of the app it is **online-first, offline read-only**: lists render from a cached snapshot, every write goes straight to the server and is refused when offline, and after a write the state is re-read rather than patched.
+
 ---
 
-## What's IN (mobile-appropriate)
+## Layout
 
-- **Three sub-tabs**: Today, Due, Projects.
-- **Compact running-timer card** at the top, with elapsed time, comment field, Stop and Cancel.
-- **Today/Week progress bars** vs the user's daily/weekly target seconds.
-- **Today's plan blocks** (read-only) — see the time-of-day schedule for today; tap a linked block to open the task.
-- **Tasks by due date** with day dividers and a priority filter (≤1 / ≤2 / ≤3 / ≤4 / All). Each row has Start, Finish-or-Renew, and a per-row Timer button (label flips to "Assign" when a timer is already running).
-- **Active project tree** (collapsible) — tap a leaf task to open detail; project nodes don't navigate, they expand/collapse.
-- **Task detail bottom sheet** — full edit of name, description, due, type (Standard/Continuous/Recurring), recurrence (when applicable), priority (1-5 chips); Start/Finish/Renew button; todos (add/check/delete); deps/blocks shown as **read-only badges**; Delete with confirm.
-- **Task create FAB** — name + project picker + due + type + recurrence + priority + "Start now" checkbox.
-- **Timer lifecycle** — start (POST), restore on app open (GET active), reassign current entry to another task, stop with optional comment, cancel (delete the entry).
+Top to bottom: a **Today | Projects** toggle, the **timer panel**, then the two tabs as swipeable pages. The panel is pinned above both tabs (the web shows it only on Today; on a phone a running timer you cannot see or stop from Projects is worse than the ten extra lines).
 
-## What's OUT (better on desktop)
+### Timer panel (`TimerPanel.kt`, `TaskPickerSheet.kt`)
 
-| Web feature | Why we skip it on mobile |
+- Row one: the pen (opens the task picker), the task and project name (tap → task detail), a chevron.
+- Row two: the elapsed clock and **Start / Stop**.
+- **Start with nothing running opens the picker**, and picking a task starts the timer on it. This is the one place the phone differs from the web's flow: the web can run a bare clock with no task, but here a timer only exists once the server has issued a time entry (see `TaskRepository`), so it always belongs to a task.
+- Picking while a timer runs **re-points** the running entry at the new task (no time logged, just a different task).
+- The chevron unfolds: comment (saved 500 ms after you stop typing, and only when it differs from what the server holds), the start time, Cancel (deletes the entry), Today / Week progress against the daily and weekly targets, and the Agenda.
+- **The picker** is a searchable sheet grouped by project (`GET /tasks/tasks/list-fast`, read live each time it opens). A failed load says "Could not load tasks" with a Retry — it never reads as an empty account. The same picker serves the plan-block editor and the commitments form.
+
+### Today tab
+
+Due Soon on top, Today's Plan below it, in one scrolling list.
+
+**Due Soon** (`DueSoon.kt`, `TaskBoard.kt`, `DueSoonSection.kt`) — ported from web's `dueSoonGrouping.ts` and `TaskBoard`:
+
+- **Four tiers**: Overdue, Start Today, This Week, Later. A task is *overdue* when its date is before today; *Start Today* when it is due today **or** the API marked it `urgent`; *This Week* when its effective date is within seven days; otherwise *Later*. The **effective date** is `start_by` when the task has an estimate, else its due date; it is what This Week / Later sort by. Overdue and Start Today sort by the real due date. Priority breaks ties; undated tasks sort last within their tier.
+- A task due today never leaves *Start Today* because of its estimate: the estimate only ever promotes a task *before* its due date.
+- **Tiering happens before folding**, so an urgent task that plain date order would rank last is never cut by the fold. The list folds at **8** and "N more" unfolds 8 at a time (smaller than the usual 15/10: a Due Soon card carries badges and an urgency line).
+- **Filters**: priority (All · ≤1 · ≤2 · ≤3 · ≤4) and project (includes sub-projects). Changing either resets the fold. The number beside the title counts tasks due today or earlier.
+- **The urgency line** ("6h left · should've started 2d ago") explains *why* a task is urgent instead of leaving it to colour. It needs `urgent`, `remaining_hours` and `start_by`, all computed by the API from the estimate and free capacity — the client only renders them. Urgent rows get a warning border; overdue rows red, and a row that is both stays red.
+- **Row actions**: Start (→ Done, or Renew for a recurring task) and the timer buttons. With no timer running the timer button is one play button; with one running it is **Assign** (re-point the running entry) and **Stop Start** (finish it, begin a new one on this task). All disabled on a `blocked` task.
+- A finished task disappears immediately (a `pending` set in the ViewModel hides it until the re-read confirms it) and comes back if the write fails. A renewed task stays: only its date moves.
+
+**Today's Plan** (`PlanTimeline.kt`, `PlanViewModel.kt`, `PlanSection.kt`) — ported from web's `planOverlay.ts` and `PlanBoard`:
+
+- **One agenda around a "now" line.** Everything before now is rebuilt from what *actually happened* (today's time entries); everything after is plain intent (the plan's blocks). Rows above the line: **actual** (a real entry, tied to the block that planned it when one matches — "27m / 1h", "12m short", "planned for 15:00" when it ran off-schedule), **rest** (a planned break nothing ran through), **skipped** (a block that did not happen: not done / done at another time / a break worked through), **gap** (past time nothing accounts for, over two minutes). Rows below: **planned**, the block in progress counting only what is left.
+- **The estimate bar** is two-tone: solid is logged, lighter is projected if every remaining task block is honoured. It is derived from the timeline, not from the API's day summary, so the bar and the rows can never disagree. "Skipped" counts only genuinely untouched task time — a task moved to another hour, or a break worked through, is not a shortfall.
+- **The free-time strip** shows the next seven days' free share of capacity; tight days turn amber, full days red. **Tap a day** to browse and edit that day's blocks (a plain list — no "now" line, no actual-vs-planned merge, which only mean something for today); the restore icon returns to today.
+- **Blocks**: create and edit in `PlanBlockSheet` (a task's slot or free time; times are wall-clock on the block's own day, and an end of 00:00 means the end of that day), delete, and "clear future blocks". A planned row carries the same Start / Done / Renew + timer buttons as Due Soon. Tapping an *actual* row opens that time entry in the agenda's editor; a *running* one opens the timer panel instead, because closing a live entry by giving it an end time is not what a tap should do.
+- **Recurring commitments** (`CommitmentsSheet`, from the pen beside the strip): weekly blocks (work, gym…) the API turns into plan blocks and counts against capacity. The task of an existing commitment cannot change — the API has no field for it — so editing shows it read-only.
+
+The web's block-start **alarm** (Web Audio) has no Android counterpart yet.
+
+### Projects tab (`ProjectsTab.kt`, `TaskTree.kt`)
+
+The active tree with the web's priority filter (projects are always kept whatever their children's priorities). Projects start collapsed. A task row has Start / Done / Renew and the timer buttons; a project row has **+** (new task, pre-filled with that project) and **Done**. Project *create / edit* and the project detail page are not on Android.
+
+---
+
+## What is not on Android
+
+| Web feature | Why |
 |---|---|
-| Plan block create/edit | Precise time-block picking on a phone is awkward; users plan on desktop |
-| `DepSelector` + reverse-sync (`Depends on` / `Blocks` editing) | Multi-select with subtree filter is fiddly on touch; deps are usually set up on desktop |
-| Project create + project metadata edit | Hierarchy bootstrapping is a desktop "setup" job |
-| Time history modal (chart by day/week/month) | Chart-heavy; the desktop already has a good view |
-| Agenda right sheet | Calendar-style timeline; redundant with the Plan view |
-| Manual time-entry inputs (the two TimePickers under the timer) | Backfilling old entries is rare on phone |
-| Pace tooltip | Hover UX, useless on touch |
-| `listProjectsFast` autocomplete inside `DepSelector` | Only needed if the deps editor exists |
-| `/tasks/time-entries` history list and `/tasks/time-entries/history` | Used only by the time-history chart |
-| `getProjectChildren` / project detail page | No project navigation on mobile beyond the active tree |
-
-The endpoints for these features remain available server-side; if a mobile use case appears we can light them up incrementally.
+| Time-history chart, money stats | Chart-heavy; deliberately out of scope |
+| Dependency selector + reverse-sync | Multi-select with a subtree filter is fiddly on touch |
+| Project create / edit, project detail page | Hierarchy set-up is a desktop job |
+| Block-start alarm | Needs an Android notification/alarm design of its own |
+| Manual time-entry row under the timer | The agenda's editor covers backfilling |
+| Pace tooltip | Hover UX |
 
 ---
 
-## Components
+## Files
 
 | File | Responsibility |
 |------|---------------|
-| `domain/model/Task.kt` | DTOs: `TaskByDueDateResponse`, `TaskFullResponse`, `TaskResponse`, `ActiveTreeNode`, `TodoResponse`, `TimeEntryResponse`, `ActiveTimeEntryResponse`, `TimeEntrySummaryResponse`, `PaceBreakdown`, `PlanTodayResponse`, `PlanBlockResponse`, `ProjectListItem`, plus `Create*` / `Update*` request bodies. snake_case to match the API JSON via Gson defaults. |
-| `data/api/ApiService.kt` | Retrofit endpoints under `/tasks/*` and `/plan/*` — see API contract below. Note: task / todo / time-entry updates use **PATCH** (matching the backend), unlike money which uses PUT. |
-| `ui/tasks/TasksViewModel.kt` | `state: StateFlow<TasksUiState>` (Loading / Loaded(TasksData) / Error). `timer: StateFlow<TimerState>` driven by a 1-second tick. `editingDetail: StateFlow<TaskFullResponse?>` for the open detail sheet. All mutations call `refresh()` (no optimistic UI). |
-| `ui/tasks/TasksScreen.kt` | The single-screen entry. Top: `TimerCard`. Below: tab bar (Today / Due / Projects) + content. A FAB opens `TaskCreateSheet`; stop button opens `StopTimerDialog`. |
-| `ui/tasks/TaskSheets.kt` | `TaskDetailSheet` (full edit), `TaskCreateSheet` (new task), plus reusable `TypeChip`, `PrioritySelector`, `DateField`, `ProjectDropdown`, `GvField`, `TodoRow`. |
-| `ui/tasks/TasksUtils.kt` | Locale-pinned formatters, `parseIso`, `localDateTimeToIsoUtc`, `formatRelativeDay`, `formatDurationShort`, `formatHhMmSs`, `statusLabel`, `priorityColor`, `taskTypeColor`, `buildRecurringDueAt`, `isOverdue`. |
+| `domain/model/Task.kt`, `Plan.kt` | DTOs. snake_case to match the API JSON via Gson defaults. `TaskByDueDateResponse` carries the urgency fields (`urgent`, `start_by`, `remaining_hours`, `estimate_hours`); decimals arrive as strings. |
+| `data/repository/TaskRepository.kt` | Cached snapshot (due list, tree, summary, today's plan, **today's time entries**, **7-day free/busy**), the server-issued timer, and every task / project / entry write. |
+| `data/repository/PlanRepository.kt` | Plan-block and commitment writes; other days and the commitment list are read live. Each write ends by asking `TaskRepository` to re-read. |
+| `ui/tasks/TasksViewModel.kt` | `state` (Loading / Loaded: data + the filtered Due Soon view + the filtered tree), `timer`, detail sheet state, and every action. Failures come back on `toast`. |
+| `ui/tasks/PlanViewModel.kt` | The plan: timeline, summary, selected day, and block / commitment writes. Rebuilds the timeline on every snapshot change and once a minute. |
+| `ui/tasks/DueSoon.kt`, `TaskBoard.kt`, `TaskTree.kt`, `PlanTimeline.kt` | **Pure logic**, no Android types, unit-tested. |
+| `ui/tasks/TasksScreen.kt` | The shell: toggle, timer panel, pager, and every sheet/dialog. |
+| `ui/tasks/TodayTab.kt`, `DueSoonSection.kt`, `PlanSection.kt`, `ProjectsTab.kt`, `TaskRows.kt` | The lists and their rows. |
+| `ui/tasks/TimerPanel.kt`, `TaskPickerSheet.kt`, `TimeEntrySheet.kt`, `AgendaSheet.kt` | Timer and time-entry editing. |
+| `ui/tasks/PlanBlockSheet.kt`, `CommitmentsSheet.kt`, `TaskSheets.kt` | Editors: plan block, commitments, task detail / create. |
+| `ui/tasks/TasksUtils.kt` | Locale-pinned formatters, `parseIso`, `localDateTimeToIsoUtc`, `statusLabel`, colours. |
 
----
-
-## Sub-tabs
-
-### Today
-
-The default landing view, optimized for the morning glance.
-
-1. `ProgressSummary` — two thin progress bars (today vs daily target, week vs weekly target). Bar color shifts at 5/6 of target (warning) and 11/12 (success), matching the web's thresholds.
-2. `PlanBlockRow` list — read-only blocks for today. Time range (`HH:mm–HH:mm`) on the left, label/task on the right. Strikethrough when `task_finished_at != null`. Tap a linked block → open the task detail sheet.
-3. Tasks due today or overdue (subset of `byDueDate` filtered to `date_key <= today_key`).
-
-### Due
-
-Full `tasksByDueDate` list with **day dividers** between dates (`Today`, `Yesterday`, `Tomorrow`, `EEE, d MMM`). Priority filter chips at the top. Overdue rows get a red border accent. Each row has:
-
-- Name + Blocked icon (when `blocked = true`) + priority pill.
-- Project name (if any).
-- Status badge + due-date pill + time-spent pill.
-- A two-button action row: Start / Finish/Renew on the left, Timer/Assign on the right. Buttons are disabled when `blocked = true`.
-
-### Projects
-
-The `getActiveTree` payload flattened with the same `ancestorHasMore` pattern used in the money categories view — except here projects are foldable (chevron), and tapping a task leaf opens the detail sheet. Projects themselves don't navigate; project create/edit lives on desktop.
+Tests (`app/src/test/.../ui/tasks/`): `DueSoonTest`, `TaskBoardTest`, `TaskTreeTest`, `PlanTimelineTest`, `PlanEditingTest`. They pin the placements that render fine while being wrong — an urgent task under "later", a task worked at the wrong hour reported as "not done", a break counted twice, a timer started this second missing from the plan.
 
 ---
 
 ## Timer
 
-The active time entry is the single source of truth for "what's running right now". The view model:
+The server is the only source of truth for "what is running". `TaskRepository` re-reads `GET /tasks/time-entries/active` after every timer write, and once on startup — an app killed and reopened mid-timer finds its entry again.
 
-- On every `refresh()` calls `getActiveTimeEntry`. If present, copies it to `_timer.active` and starts a 1s tick that recomputes `elapsedSeconds = now - started_at`.
-- `startOrAssignTimer(taskId)` — POSTs `createTimeEntry` if nothing is running, otherwise PATCHes the existing entry's `task_id`. This matches the web's "Iniciar"/"Asignar" semantics.
-- `stopTimer(comment)` — PATCHes `finished_at = now()` plus the comment, then `refresh()`.
-- `cancelTimer()` — DELETEs the entry (use case: started by mistake), then `refresh()`.
-- `updateTimerComment(comment)` — debounced 500ms PATCH from inline edits in the timer card.
-
-The `TimerCard` collapses to a one-line "No timer running" strip when idle.
-
-When the app is killed and reopened mid-timer, the running entry is rediscovered on the next `refresh()` call (which fires at ViewModel init) — no local persistence needed.
-
----
+- `startOrAssignTimer(taskId)` — `POST` a new entry, or `PATCH` the running one's `task_id`.
+- `stopAndStartTimer(taskId)` — stop (`finished_at = now`) then start; the row's **Stop Start**.
+- `stopTimer(comment)`, `cancelTimer()` (deletes), `updateTimerComment`, `editActiveTimerStart`.
+- After any timer or entry write, **today's entries and the summary are re-read** too, so the plan's "what I did" is right the moment a timer starts or stops.
 
 ## Task mutations
 
@@ -99,67 +101,28 @@ When the app is killed and reopened mid-timer, the running entry is rediscovered
 |---|---|---|
 | Start task | `PATCH /tasks/tasks/{id}` | `{ started_at: now }` |
 | Finish task | `PATCH /tasks/tasks/{id}` | `{ finished_at: now }` |
-| Renew recurring task | `PATCH /tasks/tasks/{id}` | `{ due_at: today + recurrence days }` (via `buildRecurringDueAt`) |
-| Edit task | `PATCH /tasks/tasks/{id}` | `{ name, description, due_at, task_type, recurrence?, priority }` |
-| Delete task | `DELETE /tasks/tasks/{id}` | — |
-| Create task | `POST /tasks/tasks` | `{ name, project_id?, description?, due_at?, task_type?, recurrence?, priority? }` |
+| Renew recurring task | `PATCH /tasks/tasks/{id}` | `{ due_at: today + recurrence days }` |
+| Start / finish project | `PATCH /tasks/projects/{id}` | `{ started_at }` / `{ finished_at }` |
+| Edit / delete / create task | `PATCH` / `DELETE` / `POST /tasks/tasks` | see `TaskSheets.kt` |
 
-`UpdateTaskRequest` has all-nullable fields and Gson drops nulls by default, so a "set started_at only" call sends `{"started_at":"…"}` and the server treats it as a partial update.
+Clearable fields go through `PatchBody` so an explicit JSON `null` survives serialisation. **Finish or Renew** is one decision, made in `TaskRepository.finishOrRenew`: a recurring task with a `recurrence` is renewed (its date moves, it stays open), anything else is finished.
 
-### "Finish or Renew" routing
+## Dates
 
-`finishTaskOrRenew(task)` in the ViewModel chooses one of two server calls based on the task:
-
-- `task_type == "recurring" && recurrence != null` → renewal (`due_at = today + N days`), the task stays open and gets a new deadline.
-- otherwise → completion (`finished_at = now`).
-
-This matches the web logic in `+page.svelte` (`handleTaskToggle`) and `TaskBottomSheet.svelte`.
-
-### Todos
-
-`addTodo` / `toggleTodo` / `deleteTodo` operate against the open detail sheet. After each call we reload the full task to keep todo order and `is_done` flags in sync with the server.
-
----
-
-## Locale handling
-
-Same rules as the money feature:
-
-- **Payload to API**: ISO-8601 UTC, locale `Locale.ROOT`. `localDateTimeToIsoUtc` converts a `LocalDateTime` (system zone) to a UTC `yyyy-MM-dd'T'HH:mm:ss'Z'` string.
-- **Display**: `Locale.UK`. Day labels (`EEE, d MMM`), durations (`1h 23m`), HH:mm:ss for the timer (`formatHhMmSs`).
-
-Dates entered in the form sheet use `LocalDate` (no time picker), normalized to noon UTC before sending — that avoids zone-boundary off-by-one and matches the desktop's habit of mostly using calendar-day granularity for due dates.
-
----
+`due_at` is a *conceptual date*, not an instant. Due Soon reads its first ten characters rather than converting a zone, and a picked due date is sent as noon UTC — a timezone conversion here shifts the task a day. Time entries and plan blocks are real instants: parse them with `parseInstantOrNull`, and convert a picked wall clock with `localDateTimeToIsoUtc`.
 
 ## API contract
 
 ```
-GET    /tasks/tasks/by-due-date                → TaskByDueDateResponse[]
-GET    /tasks/tree                             → ActiveTreeNode[]
-GET    /tasks/tasks/{id}                       → TaskFullResponse
-POST   /tasks/tasks                            → TaskResponse
-PATCH  /tasks/tasks/{id}                       → TaskResponse
-DELETE /tasks/tasks/{id}                       → 204
-GET    /tasks/projects/list-fast               → ProjectListItem[]
-POST   /tasks/todos                            → TodoResponse
-PATCH  /tasks/todos/{id}                       → TodoResponse
-DELETE /tasks/todos/{id}                       → 204
-POST   /tasks/time-entries                     → TimeEntryResponse
-PATCH  /tasks/time-entries/{id}                → TimeEntryResponse
-DELETE /tasks/time-entries/{id}                → 204
-GET    /tasks/time-entries/active              → ActiveTimeEntryResponse
-GET    /tasks/time-entries/summary             → TimeEntrySummaryResponse
-GET    /plan/today                             → PlanTodayResponse
+GET    /tasks/tasks/by-due-date       GET    /tasks/tree             GET  /tasks/tasks/list-fast
+GET    /tasks/tasks/{id}              POST   /tasks/tasks            PATCH|DELETE /tasks/tasks/{id}
+PATCH  /tasks/projects/{id}           GET    /tasks/projects/list-fast
+POST   /tasks/todos                   PATCH|DELETE /tasks/todos/{id}
+POST   /tasks/time-entries            PATCH|DELETE /tasks/time-entries/{id}
+GET    /tasks/time-entries            (today's entries — the plan's past half)
+GET    /tasks/time-entries/active     GET    /tasks/time-entries/summary
+GET    /plan/today                    GET    /plan/range?from&to     (another day)
+POST   /plan/blocks                   PUT|DELETE /plan/blocks/{id}   DELETE /plan/blocks/future
+GET|POST /plan/commitments            PUT|DELETE /plan/commitments/{id}
+GET    /capacity/free-busy?from&to    (the free-time strip)
 ```
-
-Not wired (desktop-only on this client): `/tasks/projects` (list/get/get-children/create/update/delete), `/tasks/time-entries` (list + history), `/plan/blocks` (POST/PUT/DELETE), `/tasks/tasks/list-fast`.
-
----
-
-## Future work
-
-- **Boot-time notification when a task is due** — surface today's overdue count as a quick local notification at a configurable time. Reuses the dormant `notification/` skeleton.
-- **Optional offline cache** — keep the last `getTasksByDueDate` snapshot so the Today tab renders before the network round-trip on reopens.
-- **Per-task time-entry list** — show a task's recent timer entries inside the detail sheet (uses the existing `/tasks/tasks/{id}/time-entries` endpoint).
-- **Light plan-block editing** — a single "shift this block by ±15min" gesture might be cheap to add and is useful on the go; full create/edit still belongs on desktop.

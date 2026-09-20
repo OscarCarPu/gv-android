@@ -45,6 +45,7 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,44 +66,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private sealed interface EditorTarget {
+internal sealed interface EditorTarget {
     data object New : EditorTarget
     data class Existing(val entry: TimeEntryWithTaskResponse) : EditorTarget
 }
 
 private val DateTimeLabel = DateTimeFormatter.ofPattern("EEE d MMM · HH:mm", Locale.UK)
 private val HourLabel = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
-
-/** Seconds between two ISO-UTC instants (0 if unparseable / open). */
-private fun durationSecs(startIso: String, endIso: String?): Long {
-    val s = parseIso(startIso)
-    val e = endIso?.let { parseIso(it) }
-    return if (s != null && e != null) java.time.Duration.between(s, e).seconds.coerceAtLeast(0L) else 0L
-}
-
-/** Synthetic agenda row for an optimistic (not-yet-synced) entry. */
-private fun agendaRow(
-    tempId: Int,
-    taskId: Int,
-    option: TaskOption?,
-    startIso: String,
-    endIso: String?,
-    comment: String?,
-) = TimeEntryWithTaskResponse(
-    id = tempId,
-    task_id = taskId,
-    task_name = option?.name ?: "Task",
-    task_type = null,
-    recurrence = null,
-    priority = null,
-    project_id = null,
-    project_name = option?.projectName,
-    started_at = startIso,
-    finished_at = endIso,
-    comment = comment,
-    task_finished_at = null,
-    time_spent = durationSecs(startIso, endIso),
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,12 +84,11 @@ fun AgendaSheet(vm: TasksViewModel, onDismiss: () -> Unit) {
     var entries by remember { mutableStateOf<List<TimeEntryWithTaskResponse>?>(null) }
     var taskOptions by remember { mutableStateOf<List<TaskOption>>(emptyList()) }
     var editor by remember { mutableStateOf<EditorTarget?>(null) }
-    var tempId by remember { mutableStateOf(-1) }
+    // Bumped after each write so the day is re-read from the server rather than patched locally.
+    var reload by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) { vm.loadTaskOptions { taskOptions = it } }
-    // Reload from the server only when the day changes (or the sheet reopens); in-day mutations
-    // update the list optimistically since the write is queued and won't be on the server yet.
-    LaunchedEffect(day) {
+    LaunchedEffect(day, reload) {
         entries = null
         vm.loadDayEntries(day) { entries = it ?: emptyList() }
     }
@@ -145,8 +114,7 @@ fun AgendaSheet(vm: TasksViewModel, onDismiss: () -> Unit) {
                     onNextDay = { day = day.plusDays(1) },
                     onToday = { day = LocalDate.now() },
                     onAdd = { editor = EditorTarget.New },
-                    // Optimistic temp rows (id < 0) aren't yet on the server, so not re-editable.
-                    onEdit = { if (it.id >= 0) editor = EditorTarget.Existing(it) },
+                    onEdit = { editor = EditorTarget.Existing(it) },
                 )
                 else -> EntryEditor(
                     target = e,
@@ -154,37 +122,17 @@ fun AgendaSheet(vm: TasksViewModel, onDismiss: () -> Unit) {
                     taskOptions = taskOptions,
                     onBack = { editor = null },
                     onSave = { taskId, startIso, endIso, comment ->
-                        val opt = taskOptions.firstOrNull { it.id == taskId }
                         when (e) {
-                            is EditorTarget.New -> if (endIso != null) {
-                                vm.createPastEntry(taskId, startIso, endIso, comment)
-                                val tid = tempId.also { tempId -= 1 }
-                                entries = ((entries ?: emptyList()) + agendaRow(tid, taskId, opt, startIso, endIso, comment))
-                                    .sortedBy { it.started_at }
-                            }
-                            is EditorTarget.Existing -> {
-                                vm.editEntry(e.entry.id, taskId, startIso, endIso, comment)
-                                entries = entries?.map { row ->
-                                    if (row.id == e.entry.id) {
-                                        row.copy(
-                                            task_id = taskId,
-                                            task_name = opt?.name ?: row.task_name,
-                                            project_name = opt?.projectName ?: row.project_name,
-                                            started_at = startIso,
-                                            finished_at = endIso,
-                                            comment = comment,
-                                            time_spent = durationSecs(startIso, endIso),
-                                        )
-                                    } else row
-                                }?.sortedBy { it.started_at }
-                            }
+                            is EditorTarget.New ->
+                                if (endIso != null) vm.createPastEntry(taskId, startIso, endIso, comment) { reload++ }
+                            is EditorTarget.Existing ->
+                                vm.editEntry(e.entry.id, taskId, startIso, endIso, comment) { reload++ }
                         }
                         editor = null
                     },
                     onDelete = (e as? EditorTarget.Existing)?.let {
                         {
-                            vm.deleteEntry(it.entry.id)
-                            entries = entries?.filterNot { row -> row.id == it.entry.id }
+                            vm.deleteEntry(it.entry.id) { reload++ }
                             editor = null
                         }
                     },
@@ -268,7 +216,7 @@ private fun AgendaRow(entry: TimeEntryWithTaskResponse, onClick: () -> Unit) {
 }
 
 @Composable
-private fun EntryEditor(
+internal fun EntryEditor(
     target: EditorTarget,
     day: LocalDate,
     taskOptions: List<TaskOption>,

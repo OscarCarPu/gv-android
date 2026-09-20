@@ -25,25 +25,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gv.app.ui.alarm.AlarmScreen
+import com.gv.app.ui.domotics.LightsScreen
 import com.gv.app.ui.rutas.RutasScreen
 import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
 
 private enum class OtrosTab(val label: String) {
-    ROUTES("Rutas"), ALARM("Alarma")
+    LIGHTS("Lights"), ROUTES("Rutas"), ALARM("Alarma")
 }
 
 /**
- * Groups the secondary features under one bottom-tab. Uses a plain `when` body
+ * Groups the secondary features (Lights, Routes, the alarm) under one bottom-tab. Uses a plain `when` body
  * (not a pager) so each sub-screen is disposed when you leave it.
  */
 @Composable
 fun OtrosScreen() {
-    var tab by rememberSaveable { mutableStateOf(OtrosTab.ROUTES) }
+    var tab by rememberSaveable { mutableStateOf(OtrosTab.LIGHTS) }
     Column(Modifier.fillMaxSize().background(GvColors.Bg)) {
         TabBar(selected = tab, onSelect = { tab = it })
         Box(Modifier.fillMaxSize()) {
             when (tab) {
+                OtrosTab.LIGHTS -> LightsScreen()
                 OtrosTab.ROUTES -> RutasScreen()
                 OtrosTab.ALARM -> AlarmScreen()
             }

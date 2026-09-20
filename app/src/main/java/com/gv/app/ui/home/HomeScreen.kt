@@ -14,7 +14,6 @@ import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.Icon
@@ -48,55 +47,56 @@ import com.gv.app.ui.tasks.TasksScreen
 import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
 
-private enum class HomeTab(
-    val label: String,
-    val icon: ImageVector,
-    val enabled: Boolean,
-) {
-    HABITS("Habits", Icons.Outlined.CheckCircle, enabled = true),
-    TASKS("Tasks", Icons.AutoMirrored.Outlined.List, enabled = true),
-    CALENDAR("Calendar", Icons.Outlined.CalendarMonth, enabled = true),
-    FINANCE("Finance", Icons.Outlined.AccountBalanceWallet, enabled = true),
-    LIGHTS("Lights", Icons.Outlined.Lightbulb, enabled = true),
-    OTROS("Otros", Icons.Outlined.MoreHoriz, enabled = true),
-}
-
 /**
- * Which tabs this build ships. The `lights` flavour is a single-purpose remote, so it drops
- * the bottom bar entirely rather than showing a one-item one.
+ * The bottom bar, in the order the web's nav reads: Tasks first (it is where the app opens),
+ * then Money, Calendar and Habits, with everything secondary under Otros.
  */
-private val visibleTabs: List<HomeTab> =
-    if (BuildConfig.LIGHTS_ONLY) listOf(HomeTab.LIGHTS) else HomeTab.entries
+private enum class HomeTab(val label: String, val icon: ImageVector) {
+    TASKS("Tasks", Icons.AutoMirrored.Outlined.List),
+    FINANCE("Finance", Icons.Outlined.AccountBalanceWallet),
+    CALENDAR("Calendar", Icons.Outlined.CalendarMonth),
+    HABITS("Habits", Icons.Outlined.CheckCircle),
+    OTROS("Otros", Icons.Outlined.MoreHoriz),
+}
 
 @Composable
 fun HomeScreen() {
-    var selected by rememberSaveable { mutableStateOf(visibleTabs.first()) }
+    // The `lights` flavour is a single-purpose remote: no bottom bar, straight onto Lights.
+    if (BuildConfig.LIGHTS_ONLY) {
+        HomeFrame(title = "Lights", bottomBar = {}) { LightsScreen() }
+        return
+    }
 
-    Scaffold(
-        containerColor = GvColors.Bg,
-        bottomBar = {
-            if (visibleTabs.size > 1) {
-                GvNavigationBar(selected = selected, onSelect = { selected = it })
-            }
-        },
-    ) { innerPadding ->
+    var selected by rememberSaveable { mutableStateOf(HomeTab.TASKS) }
+    HomeFrame(
+        title = selected.label,
+        bottomBar = { GvNavigationBar(selected = selected, onSelect = { selected = it }) },
+    ) {
+        when (selected) {
+            HomeTab.TASKS -> TasksScreen()
+            HomeTab.FINANCE -> MoneyScreen()
+            HomeTab.CALENDAR -> CalendarScreen()
+            HomeTab.HABITS -> HabitsScreen()
+            HomeTab.OTROS -> OtrosScreen()
+        }
+    }
+}
+
+@Composable
+private fun HomeFrame(
+    title: String,
+    bottomBar: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Scaffold(containerColor = GvColors.Bg, bottomBar = bottomBar) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            TopBar(title = selected.label)
+            TopBar(title = title)
             SyncStatusBanner()
-            Box(modifier = Modifier.weight(1f)) {
-                when (selected) {
-                    HomeTab.HABITS -> HabitsScreen()
-                    HomeTab.TASKS -> TasksScreen()
-                    HomeTab.CALENDAR -> CalendarScreen()
-                    HomeTab.FINANCE -> MoneyScreen()
-                    HomeTab.LIGHTS -> LightsScreen()
-                    HomeTab.OTROS -> OtrosScreen()
-                }
-            }
+            Box(modifier = Modifier.weight(1f)) { content() }
         }
     }
 }
@@ -134,14 +134,13 @@ private fun GvNavigationBar(
         containerColor = GvColors.BgLight,
         contentColor = GvColors.Text,
     ) {
-        visibleTabs.forEach { tab ->
+        HomeTab.entries.forEach { tab ->
             NavigationBarItem(
                 selected = selected == tab,
-                enabled = tab.enabled,
                 onClick = { onSelect(tab) },
                 icon = { Icon(tab.icon, contentDescription = tab.label) },
-                // Six tabs leave about sixty points each, so a label may not fit whole; clipping
-                // one is better than wrapping it onto a second line and shoving the bar taller.
+                // A label that does not fit is clipped rather than wrapped onto a second line,
+                // which would shove the bar taller.
                 label = { Text(tab.label, maxLines = 1, softWrap = false) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = GvColors.Primary,
@@ -149,8 +148,6 @@ private fun GvNavigationBar(
                     indicatorColor = GvColors.Primary.copy(alpha = 0.10f),
                     unselectedIconColor = GvColors.TextMuted,
                     unselectedTextColor = GvColors.TextMuted,
-                    disabledIconColor = GvColors.TextMuted.copy(alpha = 0.40f),
-                    disabledTextColor = GvColors.TextMuted.copy(alpha = 0.40f),
                 ),
             )
         }

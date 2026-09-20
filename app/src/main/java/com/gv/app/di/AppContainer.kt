@@ -13,6 +13,7 @@ import com.gv.app.data.repository.CalendarRepository
 import com.gv.app.data.repository.HabitRepository
 import com.gv.app.data.repository.LightsRepository
 import com.gv.app.data.repository.OnlineGate
+import com.gv.app.data.repository.PlanRepository
 import com.gv.app.data.repository.RutasRepository
 import com.gv.app.data.repository.TaskRepository
 import com.gv.app.data.sync.CacheRefresher
@@ -63,6 +64,9 @@ class AppContainer(context: Context) {
 
     val taskRepository: TaskRepository =
         TaskRepository(apiService, database, database.taskDao(), onlineGate)
+
+    val planRepository: PlanRepository =
+        PlanRepository(apiService, onlineGate, taskRepository)
 
     val rutasRepository: RutasRepository =
         RutasRepository(apiService, database, database.rutasDao(), onlineGate)

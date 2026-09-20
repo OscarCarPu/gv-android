@@ -8,7 +8,9 @@ import com.gv.app.data.repository.ApiResult
 import com.gv.app.data.repository.TaskRepository
 import com.gv.app.data.repository.TasksData
 import com.gv.app.domain.model.ActiveTimer
+import com.gv.app.domain.model.ActiveTreeNode
 import com.gv.app.domain.model.CreateTaskRequest
+import com.gv.app.domain.model.TaskFastResponse
 import com.gv.app.domain.model.TaskFullResponse
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -24,12 +26,27 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 
 sealed class TasksUiState {
     data object Loading : TasksUiState()
-    data class Loaded(val data: TasksData) : TasksUiState()
+
+    /** [due] and [tree] are [data] with the board's filters and pending finishes applied. */
+    data class Loaded(
+        val data: TasksData,
+        val due: DueSoonView,
+        val tree: List<ActiveTreeNode>,
+        val filters: BoardFilters,
+    ) : TasksUiState()
+}
+
+/** The timer picker's list, which is read live each time it opens. */
+sealed interface PickerTasks {
+    data object Loading : PickerTasks
+    data class Loaded(val tasks: List<TaskFastResponse>) : PickerTasks
+    data object Failed : PickerTasks
 }
 
 data class TimerState(
@@ -40,10 +57,12 @@ data class TimerState(
 }
 
 /**
- * Offline-first tasks ViewModel. The list is collected from the Room snapshot (instant, works
- * offline) and reconciled in the background; the timer ticks locally from the cached start time.
- * All mutations go through [TaskRepository], which commits locally / queues sync so actions
- * don't block on the network.
+ * The Tasks screen's ViewModel. Online-first, offline read-only: lists are collected from the
+ * Room snapshot (instant, and still there with no connection) and re-read after every write;
+ * the timer ticks locally from the server-issued start time. Every write goes through
+ * [TaskRepository], which refuses it when offline, and each failure comes back on [toast].
+ *
+ * The plan has its own [PlanViewModel]; this one owns everything else on the screen.
  */
 class TasksViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -56,14 +75,28 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
     private val _editingDetail = MutableStateFlow<TaskFullResponse?>(null)
     val editingDetail: StateFlow<TaskFullResponse?> = _editingDetail.asStateFlow()
 
+    private val filters = MutableStateFlow(BoardFilters())
+
+    // Finished a moment ago and hidden until the re-read confirms it. The repository never
+    // patches its own cache from a request, so this is the only optimism the lists have.
+    private val pendingTasks = MutableStateFlow<Set<Int>>(emptySet())
+    private val pendingProjects = MutableStateFlow<Set<Int>>(emptySet())
+
     val state: StateFlow<TasksUiState> =
-        combine(repo.tasksData(), _refreshing) { data, refreshing ->
+        combine(repo.tasksData(), _refreshing, filters, pendingTasks, pendingProjects) { data, refreshing, f, pt, pp ->
             when {
-                data != null -> TasksUiState.Loaded(data)
+                data != null -> loaded(data, f, pt, pp)
                 refreshing -> TasksUiState.Loading
-                else -> TasksUiState.Loaded(EMPTY_DATA)
+                else -> loaded(EMPTY_DATA, f, pt, pp)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState.Loading)
+
+    private fun loaded(data: TasksData, f: BoardFilters, pt: Set<Int>, pp: Set<Int>) = TasksUiState.Loaded(
+        data = data,
+        due = buildDueSoonView(data.byDueDate, data.tree, f, pt),
+        tree = filterTree(data.tree, f.treePriority, pt, pp),
+        filters = f,
+    )
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val timer: StateFlow<TimerState> =
@@ -95,6 +128,16 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ----- Board filters -----
+
+    fun setDuePriority(value: Int?) = filters.update { it.withDuePriority(value) }
+
+    fun setDueProject(value: Int?) = filters.update { it.withDueProject(value) }
+
+    fun setTreePriority(value: Int?) = filters.update { it.withTreePriority(value) }
+
+    fun showMoreDue() = filters.update { it.copy(dueVisibleCount = it.dueVisibleCount + DUE_EXPAND_STEP) }
+
     // ----- Timer -----
 
     /**
@@ -103,6 +146,17 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun startOrAssignTimer(taskId: Int) {
         viewModelScope.launch { report(repo.startOrAssignTimer(taskId)) }
+    }
+
+    /** Finish the running timer and begin one on [taskId] in a single tap (the row's "Stop Start"). */
+    fun stopAndStartTimer(taskId: Int) {
+        viewModelScope.launch { report(repo.stopAndStartTimer(taskId)) }
+    }
+
+    /** Read live on each open; the caller decides how to say "could not load". */
+    suspend fun pickerTasks(): PickerTasks = when (val r = repo.pickerTasks()) {
+        is ApiResult.Success -> PickerTasks.Loaded(r.data)
+        is ApiResult.Failure -> PickerTasks.Failed
     }
 
     fun stopTimer(comment: String?) {
@@ -128,11 +182,38 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
     // ----- Task mutations -----
 
     fun startTask(taskId: Int) {
-        viewModelScope.launch { repo.startTask(taskId) }
+        viewModelScope.launch { report(repo.startTask(taskId)) }
     }
 
+    /**
+     * Done, or Renew for a recurring task. A finished task disappears at once; a renewed one
+     * stays (only its date moves), so it is never hidden.
+     */
     fun finishOrRenew(taskId: Int, taskType: String?, recurrence: Int?) {
-        viewModelScope.launch { repo.finishOrRenew(taskId, taskType, recurrence) }
+        viewModelScope.launch {
+            val renews = taskType == "recurring" && recurrence != null
+            if (!renews) pendingTasks.update { it + taskId }
+            val result = repo.finishOrRenew(taskId, taskType, recurrence)
+            pendingTasks.update { it - taskId }
+            report(result)
+        }
+    }
+
+    /** Start / finish / renew a node in the Projects tree. */
+    fun toggleTreeNode(id: Int, type: String, finish: Boolean) {
+        viewModelScope.launch {
+            if (type == "project") {
+                if (!finish) return@launch report(repo.startProject(id))
+                pendingProjects.update { it + id }
+                val result = repo.finishProject(id)
+                pendingProjects.update { it - id }
+                report(result)
+                return@launch
+            }
+            if (!finish) return@launch report(repo.startTask(id))
+            val node = (state.value as? TasksUiState.Loaded)?.data?.tree?.let { findTreeTask(it, id) }
+            finishOrRenew(id, node?.task_type, node?.recurrence)
+        }
     }
 
     fun saveTaskDetail(
@@ -146,22 +227,24 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
         onDone: (Boolean) -> Unit,
     ) {
         viewModelScope.launch {
-            repo.updateTaskDetail(id, name, description, dueAt, taskType, recurrence, priority)
-            onDone(true)
+            val result = repo.updateTaskDetail(id, name, description, dueAt, taskType, recurrence, priority)
+            report(result)
+            onDone(result is ApiResult.Success)
         }
     }
 
     fun deleteTask(id: Int) {
         viewModelScope.launch {
             if (_editingDetail.value?.id == id) _editingDetail.value = null
-            repo.deleteTask(id)
+            report(repo.deleteTask(id))
         }
     }
 
     fun createTask(req: CreateTaskRequest, startNow: Boolean, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
-            repo.createTask(req, startNow)
-            onDone(true)
+            val result = repo.createTask(req, startNow)
+            report(result)
+            onDone(result is ApiResult.Success)
         }
     }
 
@@ -223,19 +306,42 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun editActiveTimerStart(startedAtIso: String) {
-        viewModelScope.launch { repo.editActiveTimerStart(startedAtIso) }
+        viewModelScope.launch { report(repo.editActiveTimerStart(startedAtIso)) }
     }
 
-    fun createPastEntry(taskId: Int, startedAtIso: String, finishedAtIso: String, comment: String?) {
-        viewModelScope.launch { repo.createPastEntry(taskId, startedAtIso, finishedAtIso, comment) }
+    /** [onDone] runs once the write has finished, success or not, so the caller can re-read. */
+    fun createPastEntry(
+        taskId: Int,
+        startedAtIso: String,
+        finishedAtIso: String,
+        comment: String?,
+        onDone: () -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            report(repo.createPastEntry(taskId, startedAtIso, finishedAtIso, comment))
+            onDone()
+        }
     }
 
-    fun editEntry(id: Int, taskId: Int?, startedAtIso: String?, finishedAtIso: String?, comment: String?) {
-        viewModelScope.launch { repo.editEntry(id, taskId, startedAtIso, finishedAtIso, comment) }
+    fun editEntry(
+        id: Int,
+        taskId: Int?,
+        startedAtIso: String?,
+        finishedAtIso: String?,
+        comment: String?,
+        onDone: () -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            report(repo.editEntry(id, taskId, startedAtIso, finishedAtIso, comment))
+            onDone()
+        }
     }
 
-    fun deleteEntry(id: Int) {
-        viewModelScope.launch { repo.deleteEntry(id) }
+    fun deleteEntry(id: Int, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            report(repo.deleteEntry(id))
+            onDone()
+        }
     }
 
     private fun elapsedFor(startedAt: String?): Long {

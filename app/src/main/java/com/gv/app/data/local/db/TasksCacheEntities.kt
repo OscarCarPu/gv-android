@@ -16,6 +16,10 @@ data class TasksSnapshotEntity(
     val summaryJson: String?,
     val planJson: String?,
     val projectsJson: String,
+    /** Today's time entries: the plan timeline's past half is rebuilt from these. */
+    val entriesJson: String? = null,
+    /** The next seven days of capacity / busy / free hours (the free-time strip). */
+    val freeBusyJson: String? = null,
     val updatedAt: Long,
 )
 

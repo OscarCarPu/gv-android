@@ -32,7 +32,15 @@ import com.gv.app.domain.model.ActiveTreeNode
 import com.gv.app.domain.model.CreateTaskRequest
 import com.gv.app.domain.model.CreateTimeEntryRequest
 import com.gv.app.domain.model.CreateTodoRequest
+import com.gv.app.domain.model.CreateCommitmentRequest
+import com.gv.app.domain.model.CreatePlanBlockRequest
+import com.gv.app.domain.model.FreeBusyRangeResponse
+import com.gv.app.domain.model.PlanBlockResponse
+import com.gv.app.domain.model.PlanRangeResponse
 import com.gv.app.domain.model.PlanTodayResponse
+import com.gv.app.domain.model.RecurringCommitmentResponse
+import com.gv.app.domain.model.UpdateCommitmentRequest
+import com.gv.app.domain.model.UpdatePlanBlockRequest
 import com.gv.app.domain.model.ProjectListItem
 import com.gv.app.domain.model.TaskByDueDateResponse
 import com.gv.app.domain.model.TaskFullResponse
@@ -219,6 +227,53 @@ interface ApiService {
 
     @GET("plan/today")
     suspend fun getPlanToday(): Response<PlanTodayResponse>
+
+    /** Blocks in `[from, to)` (local `YYYY-MM-DD`), for browsing a day other than today. */
+    @GET("plan/range")
+    suspend fun getPlanRange(
+        @Query("from") from: String,
+        @Query("to") to: String,
+    ): Response<PlanRangeResponse>
+
+    @POST("plan/blocks")
+    suspend fun createPlanBlock(@Body request: CreatePlanBlockRequest): Response<PlanBlockResponse>
+
+    @PUT("plan/blocks/{id}")
+    suspend fun updatePlanBlock(
+        @Path("id") id: Int,
+        @Body request: UpdatePlanBlockRequest,
+    ): Response<PlanBlockResponse>
+
+    @DELETE("plan/blocks/{id}")
+    suspend fun deletePlanBlock(@Path("id") id: Int): Response<Unit>
+
+    /** Every block that has not started yet, today and after. */
+    @DELETE("plan/blocks/future")
+    suspend fun deleteFuturePlanBlocks(): Response<Unit>
+
+    @GET("plan/commitments")
+    suspend fun listCommitments(): Response<List<RecurringCommitmentResponse>>
+
+    @POST("plan/commitments")
+    suspend fun createCommitment(@Body request: CreateCommitmentRequest): Response<RecurringCommitmentResponse>
+
+    @PUT("plan/commitments/{id}")
+    suspend fun updateCommitment(
+        @Path("id") id: Int,
+        @Body request: UpdateCommitmentRequest,
+    ): Response<RecurringCommitmentResponse>
+
+    @DELETE("plan/commitments/{id}")
+    suspend fun deleteCommitment(@Path("id") id: Int): Response<Unit>
+
+    // --- Capacity ---
+
+    /** Per-day capacity / busy / free hours for `[from, to]`; feeds the free-time strip. */
+    @GET("capacity/free-busy")
+    suspend fun getFreeBusy(
+        @Query("from") from: String,
+        @Query("to") to: String,
+    ): Response<FreeBusyRangeResponse>
 
     // --- Rutas (Routes): Galicia municipality visit marks ---
 

@@ -1,5 +1,6 @@
 package com.gv.app.data.repository
 
+import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.gv.app.data.api.ApiService
@@ -14,9 +15,11 @@ import com.gv.app.domain.model.ActiveTimer
 import com.gv.app.domain.model.ActiveTreeNode
 import com.gv.app.domain.model.CreateTaskRequest
 import com.gv.app.domain.model.CreateTimeEntryRequest
+import com.gv.app.domain.model.DayFreeBusy
 import com.gv.app.domain.model.PlanTodayResponse
 import com.gv.app.domain.model.ProjectListItem
 import com.gv.app.domain.model.TaskByDueDateResponse
+import com.gv.app.domain.model.TaskFastResponse
 import com.gv.app.domain.model.TaskFullResponse
 import com.gv.app.domain.model.TaskOption
 import com.gv.app.domain.model.TimeEntrySummaryResponse
@@ -40,6 +43,8 @@ data class TasksData(
     val summary: TimeEntrySummaryResponse?,
     val plan: PlanTodayResponse?,
     val projects: List<ProjectListItem>,
+    val todayEntries: List<TimeEntryWithTaskResponse> = emptyList(),
+    val freeBusy: List<DayFreeBusy> = emptyList(),
 )
 
 /**
@@ -77,28 +82,39 @@ class TaskRepository(
             val summary = async { runCatching { api.getTimeEntrySummary().bodyOrNull() }.getOrNull() }
             val plan = async { runCatching { api.getPlanToday().bodyOrNull() }.getOrNull() }
             val projects = async { runCatching { api.listProjectsFast().bodyOrNull() }.getOrNull() }
+            val today = LocalDate.now()
+            val entries = async { runCatching { api.listTimeEntries(today.toString(), today.toString()).bodyOrNull() }.getOrNull() }
+            val freeBusy = async { runCatching { api.getFreeBusy(today.toString(), today.plusDays(7).toString()).bodyOrNull() }.getOrNull() }
 
             val dueList = due.await()
             val treeList = tree.await()
             val summaryRes = summary.await()
             val planRes = plan.await()
             val projectsRes = projects.await()
+            val entriesRes = entries.await()
+            val freeBusyRes = freeBusy.await()
 
             // If the core lists couldn't load at all, treat as a failed refresh (keep cache).
             if (dueList == null && treeList == null && summaryRes == null) {
                 return@coroutineScope ApiResult.Failure("Couldn't reach the server")
             }
-            val current = dao.snapshotOnce()
-            dao.upsertSnapshot(
-                TasksSnapshotEntity(
-                    byDueJson = dueList?.let { gson.toJson(it) } ?: current?.byDueJson ?: "[]",
-                    treeJson = treeList?.let { gson.toJson(it) } ?: current?.treeJson ?: "[]",
-                    summaryJson = summaryRes?.let { gson.toJson(it) } ?: current?.summaryJson,
-                    planJson = planRes?.let { gson.toJson(it) } ?: current?.planJson,
-                    projectsJson = projectsRes?.let { gson.toJson(it) } ?: current?.projectsJson ?: "[]",
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
+            // Read-modify-write, so it shares a transaction with refreshToday(): two writers
+            // keeping the halves they each fetched would otherwise overwrite one another.
+            db.withTransaction {
+                val current = dao.snapshotOnce()
+                dao.upsertSnapshot(
+                    TasksSnapshotEntity(
+                        byDueJson = dueList?.let { gson.toJson(it) } ?: current?.byDueJson ?: "[]",
+                        treeJson = treeList?.let { gson.toJson(it) } ?: current?.treeJson ?: "[]",
+                        summaryJson = summaryRes?.let { gson.toJson(it) } ?: current?.summaryJson,
+                        planJson = planRes?.let { gson.toJson(it) } ?: current?.planJson,
+                        projectsJson = projectsRes?.let { gson.toJson(it) } ?: current?.projectsJson ?: "[]",
+                        entriesJson = entriesRes?.let { gson.toJson(it) } ?: current?.entriesJson,
+                        freeBusyJson = freeBusyRes?.days?.let { gson.toJson(it) } ?: current?.freeBusyJson,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
             refreshTimer()
             ApiResult.Success(Unit)
         }
@@ -118,6 +134,27 @@ class TaskRepository(
             }
         } catch (_: Exception) {
             // Network blip: keep the cached timer rather than blanking a running one.
+        }
+    }
+
+    /**
+     * Re-read only what a timer change moves: today's entries (the plan's past half) and the
+     * day/week summary. Far cheaper than a full [reconcile] and keeps the plan honest the
+     * moment a timer starts or stops.
+     */
+    private suspend fun refreshToday() {
+        val today = LocalDate.now().toString()
+        val entries = runCatching { api.listTimeEntries(today, today).bodyOrNull() }.getOrNull() ?: return
+        val summary = runCatching { api.getTimeEntrySummary().bodyOrNull() }.getOrNull()
+        db.withTransaction {
+            val current = dao.snapshotOnce() ?: return@withTransaction
+            dao.upsertSnapshot(
+                current.copy(
+                    entriesJson = gson.toJson(entries),
+                    summaryJson = summary?.let { gson.toJson(it) } ?: current.summaryJson,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
         }
     }
 
@@ -147,6 +184,14 @@ class TaskRepository(
             }.map { }
         }
         return result.thenRefreshTimer()
+    }
+
+    /** Finish the running timer at now and begin a fresh one on [taskId] (the row's "Stop Start"). */
+    suspend fun stopAndStartTimer(taskId: Int): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        val stopped = stopTimer(comment = null)
+        if (stopped is ApiResult.Failure) return stopped
+        return startOrAssignTimer(taskId)
     }
 
     suspend fun stopTimer(comment: String?): ApiResult<Unit> {
@@ -196,6 +241,17 @@ class TaskRepository(
             PatchBody.create().put("finished_at", nowIsoUtc())
         }
         return patchTask(taskId, patch)
+    }
+
+    suspend fun startProject(id: Int): ApiResult<Unit> =
+        patchProject(id, PatchBody.create().put("started_at", nowIsoUtc()))
+
+    suspend fun finishProject(id: Int): ApiResult<Unit> =
+        patchProject(id, PatchBody.create().put("finished_at", nowIsoUtc()))
+
+    private suspend fun patchProject(id: Int, patch: PatchBody): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCall { api.updateProject(id, patch.toRequestBody()) }.map { }.thenReconcile()
     }
 
     suspend fun updateTaskDetail(
@@ -266,7 +322,7 @@ class TaskRepository(
             api.createTimeEntry(
                 CreateTimeEntryRequest(taskId, startedAtIso, finishedAtIso, comment?.ifBlank { null }),
             )
-        }.map { }
+        }.map { }.thenRefreshTimer()
     }
 
     /** Edit an existing time entry: reassign task and/or change start/end/comment. */
@@ -284,13 +340,20 @@ class TaskRepository(
         finishedAtIso?.let { patch.put("finished_at", it) }
         comment?.let { patch.putOrNull("comment", it.ifBlank { null }) }
         if (patch.isEmpty()) return ApiResult.Success(Unit)
-        return safeApiCall { api.updateTimeEntryBody(id, patch.toRequestBody()) }.map { }
+        return safeApiCall { api.updateTimeEntryBody(id, patch.toRequestBody()) }.map { }.thenRefreshTimer()
     }
 
     suspend fun deleteEntry(id: Int): ApiResult<Unit> {
         gate.requireOnline()?.let { return it }
-        return safeApiCallNoBody { api.deleteTimeEntry(id) }
+        return safeApiCallNoBody { api.deleteTimeEntry(id) }.thenRefreshTimer()
     }
+
+    /**
+     * Every unfinished task in an active project, for the timer picker and the plan editor.
+     * Read live (a stale list would offer tasks that are gone); the caller shows a failure as
+     * "could not load" rather than as an empty account.
+     */
+    suspend fun pickerTasks(): ApiResult<List<TaskFastResponse>> = safeApiCall { api.listTasksFast() }
 
     /** Task picker options derived from the cached snapshot (so the picker works offline). */
     suspend fun taskOptions(): List<TaskOption> {
@@ -337,15 +400,12 @@ class TaskRepository(
 
     // ----- helpers -----
 
-    /** Map a success's payload while carrying failures through untouched. */
-    private inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
-        is ApiResult.Success -> ApiResult.Success(transform(data))
-        is ApiResult.Failure -> this
-    }
-
-    /** On success, re-read the timer so the cache reflects the server. */
+    /** On success, re-read the timer and today's entries so the cache reflects the server. */
     private suspend fun ApiResult<Unit>.thenRefreshTimer(): ApiResult<Unit> {
-        if (this is ApiResult.Success) refreshTimer()
+        if (this is ApiResult.Success) {
+            refreshTimer()
+            refreshToday()
+        }
         return this
     }
 
@@ -363,6 +423,8 @@ class TaskRepository(
         summary = summaryJson?.let { gson.fromJson(it, TimeEntrySummaryResponse::class.java) },
         plan = planJson?.let { gson.fromJson(it, PlanTodayResponse::class.java) },
         projects = gson.fromJson(projectsJson, projectsListType) ?: emptyList(),
+        todayEntries = entriesJson?.let { gson.fromJson<List<TimeEntryWithTaskResponse>>(it, entriesListType) } ?: emptyList(),
+        freeBusy = freeBusyJson?.let { gson.fromJson<List<DayFreeBusy>>(it, freeBusyListType) } ?: emptyList(),
     )
 
     private fun ActiveTimerEntity.toDomain() = ActiveTimer(
@@ -381,6 +443,8 @@ class TaskRepository(
         private val dueListType = object : TypeToken<List<TaskByDueDateResponse>>() {}.type
         private val treeListType = object : TypeToken<List<ActiveTreeNode>>() {}.type
         private val projectsListType = object : TypeToken<List<ProjectListItem>>() {}.type
+        private val entriesListType = object : TypeToken<List<TimeEntryWithTaskResponse>>() {}.type
+        private val freeBusyListType = object : TypeToken<List<DayFreeBusy>>() {}.type
 
         private val isoUtc = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT)
 
