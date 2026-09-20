@@ -56,6 +56,28 @@ class PlanEditingTest {
         assertEquals(100f, freePercent(free("8", "12")), 0f)
     }
 
+    @Test
+    fun `free time shows minutes instead of rounding to the hour`() {
+        assertEquals("14h", formatFreeHours("14"))
+        assertEquals("5h 30m", formatFreeHours("5.5"))
+        assertEquals("2h 15m", formatFreeHours("2.25"))
+        assertEquals("0h 20m", formatFreeHours("0.33"))
+    }
+
+    @Test
+    fun `free time rounds to the nearest minute and never overflows into 60m`() {
+        assertEquals("5h 30m", formatFreeHours("5.4999"))
+        assertEquals("6h", formatFreeHours("5.999"))
+    }
+
+    @Test
+    fun `no, negative or unreadable free time is zero`() {
+        assertEquals("0h", formatFreeHours("0"))
+        assertEquals("0h", formatFreeHours("-2"))
+        assertEquals("0h", formatFreeHours("abc"))
+        assertEquals("0h", formatFreeHours(""))
+    }
+
     // --- task picker ----------------------------------------------------------------------
 
     private fun task(id: Int, name: String, projectId: Int?, project: String?) =
