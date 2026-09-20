@@ -5,6 +5,7 @@ import com.gv.app.domain.model.AuthUrlResponse
 import com.gv.app.domain.model.CalendarAccount
 import com.gv.app.domain.model.CalendarEvent
 import com.gv.app.domain.model.CreateEventRequest
+import com.gv.app.domain.model.CreateHabitRequest
 import com.gv.app.domain.model.GoogleCalendar
 import com.gv.app.domain.model.MoveEventRequest
 import com.gv.app.domain.model.MoveEventResult
@@ -17,6 +18,7 @@ import com.gv.app.domain.model.CreateAccountRequest
 import com.gv.app.domain.model.CreateCategoryRequest
 import com.gv.app.domain.model.CreateTransactionRequest
 import com.gv.app.domain.model.HabitWithLog
+import com.gv.app.domain.model.UpdateHabitRequest
 import com.gv.app.domain.model.LogHabitRequest
 import com.gv.app.domain.model.LogHabitResponse
 import com.gv.app.domain.model.LightCommandRequest
@@ -91,6 +93,13 @@ interface ApiService {
 
     @DELETE("habits/{id}")
     suspend fun deleteHabit(@Path("id") id: Int): Response<Unit>
+
+    @POST("habits")
+    suspend fun createHabit(@Body request: CreateHabitRequest): Response<Unit>
+
+    /** Full replace — see [UpdateHabitRequest]. */
+    @PUT("habits/{id}")
+    suspend fun updateHabit(@Path("id") id: Int, @Body request: UpdateHabitRequest): Response<Unit>
 
     @GET("finance/overview")
     suspend fun getFinanceOverview(): Response<Overview>

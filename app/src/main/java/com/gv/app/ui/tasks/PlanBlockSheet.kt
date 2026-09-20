@@ -1,5 +1,7 @@
 package com.gv.app.ui.tasks
 
+import com.gv.app.ui.common.FilterChip
+import com.gv.app.ui.common.gvFieldColors
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,17 +53,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val TimeLabel: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.UK)
-
-@Composable
-internal fun gvFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = GvColors.Text,
-    unfocusedTextColor = GvColors.Text,
-    focusedBorderColor = GvColors.Primary,
-    unfocusedBorderColor = GvColors.BorderLight,
-    focusedLabelColor = GvColors.Primary,
-    unfocusedLabelColor = GvColors.TextMuted,
-    cursorColor = GvColors.Primary,
-)
 
 /**
  * Wall-clock start / end of a plan block, resolved against the day it is anchored to. An end of

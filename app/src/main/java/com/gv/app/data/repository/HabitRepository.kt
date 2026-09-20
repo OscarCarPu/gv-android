@@ -6,8 +6,10 @@ import com.gv.app.data.local.db.GvDatabase
 import com.gv.app.data.local.db.HabitDao
 import com.gv.app.data.local.db.HabitDayEntity
 import com.gv.app.data.sync.CacheRefresher
+import com.gv.app.domain.model.CreateHabitRequest
 import com.gv.app.domain.model.HabitWithLog
 import com.gv.app.domain.model.LogHabitRequest
+import com.gv.app.domain.model.UpdateHabitRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
@@ -66,6 +68,23 @@ class HabitRepository(
         val key = date.toString()
         return when (val r = safeApiCall { api.logHabit(LogHabitRequest(habit_id = habitId, date = key, value = value)) }) {
             // Re-read so server-computed period totals and streaks are right, not guessed.
+            is ApiResult.Success -> refreshDate(date)
+            is ApiResult.Failure -> r
+        }
+    }
+
+    /** Create a habit, then re-read [date] so it appears with its server-computed streaks. */
+    suspend fun createHabit(request: CreateHabitRequest, date: LocalDate): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return when (val r = safeApiCallNoBody { api.createHabit(request) }) {
+            is ApiResult.Success -> refreshDate(date)
+            is ApiResult.Failure -> r
+        }
+    }
+
+    suspend fun updateHabit(id: Int, request: UpdateHabitRequest, date: LocalDate): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return when (val r = safeApiCallNoBody { api.updateHabit(id, request) }) {
             is ApiResult.Success -> refreshDate(date)
             is ApiResult.Failure -> r
         }

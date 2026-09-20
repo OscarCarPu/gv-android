@@ -1,5 +1,6 @@
 package com.gv.app.ui.tasks
 
+import com.gv.app.ui.common.SmallButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -79,37 +80,6 @@ internal fun MetaPill(text: String, color: Color) {
             .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         Text(text, style = MaterialTheme.typography.labelSmall, color = color)
-    }
-}
-
-/** The compact action button every row uses; a card must not grow taller for its buttons. */
-@Composable
-internal fun SmallButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    color: Color = GvColors.Primary,
-    icon: ImageVector? = null,
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(32.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = color,
-            contentColor = GvColors.Text,
-            disabledContainerColor = color.copy(alpha = 0.25f),
-            disabledContentColor = GvColors.Text.copy(alpha = 0.5f),
-        ),
-    ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-            Box(Modifier.width(4.dp))
-        }
-        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
 

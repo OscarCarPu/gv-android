@@ -1,5 +1,8 @@
 package com.gv.app.ui.tasks
 
+import com.gv.app.ui.common.SmallButton
+import com.gv.app.ui.common.FilterChip
+import com.gv.app.ui.common.EmptyHint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -175,27 +178,6 @@ internal fun PriorityFilter(selected: Int?, onSelect: (Int?) -> Unit) {
 }
 
 @Composable
-internal fun FilterChip(label: String, active: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (active) GvColors.Primary.copy(alpha = 0.18f) else GvColors.BgLight)
-            .border(1.dp, if (active) GvColors.Primary else GvColors.BorderLight, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (active) GvColors.Primary else GvColors.TextMuted,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
 private fun ProjectFilter(options: List<ProjectOption>, selected: Int?, onSelect: (Int?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val label = options.firstOrNull { it.id == selected }?.name ?: "Project"
@@ -255,21 +237,5 @@ internal fun ShowMore(remaining: Int, onClick: () -> Unit) {
             Text("$remaining more", style = MaterialTheme.typography.labelMedium, color = GvColors.TextMuted)
         }
         HorizontalDivider(modifier = Modifier.weight(1f), color = GvColors.BorderLight)
-    }
-}
-
-@Composable
-internal fun EmptyHint(text: String) {
-    val spacing = LocalSpacing.current
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(GvColors.BgLight)
-            .border(1.dp, GvColors.BorderLight, RoundedCornerShape(10.dp))
-            .padding(spacing.xl),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = GvColors.TextMuted)
     }
 }
