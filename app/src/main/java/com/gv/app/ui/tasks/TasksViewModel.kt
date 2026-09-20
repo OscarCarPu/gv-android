@@ -154,10 +154,7 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Read live on each open; the caller decides how to say "could not load". */
-    suspend fun pickerTasks(): PickerTasks = when (val r = repo.pickerTasks()) {
-        is ApiResult.Success -> PickerTasks.Loaded(r.data)
-        is ApiResult.Failure -> PickerTasks.Failed
-    }
+    suspend fun pickerTasks(): PickerTasks = repo.pickerTasks().toPickerTasks()
 
     fun stopTimer(comment: String?) {
         viewModelScope.launch { report(repo.stopTimer(comment)) }
@@ -356,4 +353,10 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         val EMPTY_DATA = TasksData(emptyList(), emptyList(), null, null, emptyList())
     }
+}
+
+/** A failed load must read as "could not load", never as an empty account. */
+fun ApiResult<List<TaskFastResponse>>.toPickerTasks(): PickerTasks = when (this) {
+    is ApiResult.Success -> PickerTasks.Loaded(data)
+    is ApiResult.Failure -> PickerTasks.Failed
 }

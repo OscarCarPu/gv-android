@@ -2,6 +2,7 @@ package com.gv.app.ui.tasks
 
 import com.gv.app.domain.model.DayFreeBusy
 import com.gv.app.domain.model.TaskFastResponse
+import com.gv.app.ui.common.formatFreeHours
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

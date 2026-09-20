@@ -3,6 +3,7 @@ package com.gv.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -116,7 +117,10 @@ fun MonthView(
                 .padding(horizontal = spacing.xs),
         ) {
             state.days.chunked(7).forEach { week ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                // Sized to its tallest cell. Without this the cells' fillMaxHeight() fills all the
+                // height the column has left, so the first week takes the whole screen and the
+                // other five, and the day's agenda under them, get none.
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).heightIn(min = 52.dp)) {
                     week.forEach { day ->
                         MonthCell(
                             day = day,

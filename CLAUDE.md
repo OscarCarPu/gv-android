@@ -115,6 +115,9 @@ rules that bite are:
 - **Writes are followed by re-reading the range**, never by patching local state: Google rewrites
   what it is given — a `following` split moves the occurrence into a new series with a new id, and
   a cross-account move recreates the event.
+- **An event can become a plan block** ("Create plan", as on the web): the task, the event's times
+  and the block are written in that order, a task made for a plan that then fails is deleted
+  again, and an all-day event is never rescheduled by it. See `docs/calendar.md`.
 - **Live updates** come over SSE (`/calendar/stream`), which needs its own OkHttp client (no read
   timeout, no body logging) and is scoped to the screen being resumed, not to the ViewModel.
 

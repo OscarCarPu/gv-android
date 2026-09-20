@@ -8,12 +8,20 @@ import com.gv.app.data.api.CalendarStreamEvent
 import com.gv.app.data.api.CalendarStreamMessage
 import com.gv.app.data.repository.ApiResult
 import com.gv.app.data.repository.CalendarRepository
+import com.gv.app.data.repository.PlanFromEventRequest
+import com.gv.app.data.repository.PlanRepository
+import com.gv.app.data.repository.TaskRepository
 import com.gv.app.domain.model.CalendarAccount
 import com.gv.app.domain.model.CalendarEvent
 import com.gv.app.domain.model.CreateEventRequest
+import com.gv.app.domain.model.DayFreeBusy
 import com.gv.app.domain.model.GoogleCalendar
 import com.gv.app.domain.model.UpdateEventRequest
+import com.gv.app.ui.tasks.PickerTasks
+import com.gv.app.ui.tasks.toPickerTasks
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -46,11 +54,19 @@ private data class VisibleRange(val mode: CalendarViewMode, val anchor: LocalDat
     fun bounds(): Pair<LocalDate, LocalDate> = rangeStart(mode, anchor) to rangeEnd(mode, anchor)
 }
 
-/** Loading, error and stream state, kept apart so a refresh never rebuilds the event list. */
+/**
+ * Loading, error, stream and plan state, kept apart so a refresh never rebuilds the event list.
+ * The plan half is read live with each range and, unlike the events, not cached: offline it is
+ * simply absent, so an event just shows no "planned" mark.
+ */
 private data class CalendarStatus(
     val loading: Boolean = true,
     val error: String? = null,
     val live: Boolean = false,
+    /** `instance_id`s of events that already have a plan block linked to them. */
+    val plannedRefs: Set<String> = emptySet(),
+    /** The next seven days' capacity / busy / free hours. */
+    val freeBusy: List<DayFreeBusy> = emptyList(),
 )
 
 data class CalendarUiState(
@@ -64,7 +80,12 @@ data class CalendarUiState(
     val error: String? = null,
     /** True while the change stream is connected, so the header can say the view is live. */
     val live: Boolean = false,
+    val plannedRefs: Set<String> = emptySet(),
+    val freeBusy: List<DayFreeBusy> = emptyList(),
 ) {
+    /** Whether an event (by its `instance_id`) already has a plan block. */
+    fun hasPlan(instanceId: String): Boolean = instanceId in plannedRefs
+
     /** The calendars an event may actually be created on. */
     val writableCalendars: List<GoogleCalendar>
         get() = calendars.filter { it.writable && !it.deleted && it.sync_enabled }
@@ -99,6 +120,8 @@ data class CalendarUiState(
 class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo: CalendarRepository = app.container.calendarRepository
+    private val planRepo: PlanRepository = app.container.planRepository
+    private val taskRepo: TaskRepository = app.container.taskRepository
     private val zone: ZoneId = ZoneId.systemDefault()
 
     private val range = MutableStateFlow(VisibleRange(CalendarViewMode.MONTH, LocalDate.now()))
@@ -135,6 +158,8 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             loading = s.loading,
             error = s.error,
             live = s.live,
+            plannedRefs = s.plannedRefs,
+            freeBusy = s.freeBusy,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CalendarUiState())
 
@@ -196,9 +221,19 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun fetchRange(from: LocalDate, to: LocalDate) {
         status.update { it.copy(loading = true) }
-        val result = repo.refreshRange(instantAt(from), instantAt(to))
+        val today = LocalDate.now()
+        // The events and the plan are independent reads; neither waits for the other, and a
+        // failed plan read keeps what was there rather than blanking the marks.
+        val (result, blocks, freeBusy) = coroutineScope {
+            val events = async { repo.refreshRange(instantAt(from), instantAt(to)) }
+            val plan = async { planRepo.blocksBetween(from, to) }
+            val capacity = async { planRepo.freeBusy(today, today.plusDays(7)) }
+            Triple(events.await(), plan.await(), capacity.await())
+        }
         status.update {
             it.copy(
+                plannedRefs = (blocks as? ApiResult.Success)?.data?.mapNotNull { b -> b.event_ref }?.toSet() ?: it.plannedRefs,
+                freeBusy = (freeBusy as? ApiResult.Success)?.data ?: it.freeBusy,
                 loading = false,
                 // Being offline is a normal state with its own banner; only a real server
                 // answer is worth an error line over the grid.
@@ -389,6 +424,44 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteEvent(ref: String, scope: String?, sendUpdates: String?, onResult: (Boolean) -> Unit) {
         write(onResult, { repo.deleteEvent(ref, scope, sendUpdates) }, "Event deleted")
     }
+
+    /**
+     * "Create plan" on an event. Re-reads the range afterwards, like any write here: the event may
+     * have been rescheduled to match, and the plan marks come back with that same read.
+     *
+     * [onResult] gets the failure's message (null on success) so the sheet can show it *inside*
+     * itself: the snackbar sits under a modal sheet's scrim, and a refusal — a block that overlaps
+     * one already in the plan, say — would otherwise go unseen.
+     */
+    fun createPlanFromEvent(event: CalendarEvent, plan: PlanFromEventCheck.Ok, onResult: (error: String?) -> Unit) {
+        val request = PlanFromEventRequest(
+            startsAt = plan.startsAt,
+            endsAt = plan.endsAt,
+            taskId = plan.taskId,
+            newTaskName = plan.newTaskName,
+            label = plan.label,
+            moveEvent = plan.moveEvent,
+        )
+        viewModelScope.launch {
+            when (val r = planRepo.createFromEvent(event, request)) {
+                is ApiResult.Success -> {
+                    onResult(null)
+                    fetchCurrentRange()
+                    _toast.emit("Plan created")
+                }
+
+                is ApiResult.Failure -> {
+                    // The range is re-read even so: an event that was rescheduled before the
+                    // block failed has changed, and the screen should say so.
+                    if (plan.moveEvent) fetchCurrentRange()
+                    onResult(explain(r))
+                }
+            }
+        }
+    }
+
+    /** The task picker's list, read live each time it opens. */
+    suspend fun pickerTasks(): PickerTasks = taskRepo.pickerTasks().toPickerTasks()
 
     fun moveEvent(ref: String, calendarId: Int, sendUpdates: String?, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {

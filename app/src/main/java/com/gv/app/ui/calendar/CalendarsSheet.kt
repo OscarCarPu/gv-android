@@ -1,5 +1,7 @@
 package com.gv.app.ui.calendar
 
+import com.gv.app.domain.model.DayFreeBusy
+import com.gv.app.ui.common.formatFreeHours
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +59,8 @@ import com.gv.app.ui.theme.LocalSpacing
 @Composable
 fun CalendarsSheet(
     calendars: List<GoogleCalendar>,
+    /** The next seven days' capacity, shown as the web's sidebar panel does. */
+    freeBusy: List<DayFreeBusy>,
     vm: CalendarViewModel,
     onDismiss: () -> Unit,
 ) {
@@ -131,6 +135,8 @@ fun CalendarsSheet(
                     onDisconnect = { pendingDisconnect = it },
                 )
             }
+
+            if (freeBusy.isNotEmpty()) FreeTimePanel(freeBusy)
 
             TextButton(onClick = vm::connectAccount) {
                 Text("Add a Google account", color = GvColors.Primary)
@@ -323,4 +329,23 @@ private fun MiniPill(label: String, color: Color) {
             .background(color.copy(alpha = 0.14f))
             .padding(horizontal = 6.dp, vertical = 1.dp),
     )
+}
+
+private val FreeDayFormatter = java.time.format.DateTimeFormatter.ofPattern("EEE d", java.util.Locale.UK)
+
+/** "Free time (next 7 days)": each day's free hours out of its capacity, minutes included. */
+@Composable
+private fun FreeTimePanel(days: List<DayFreeBusy>) {
+    val spacing = LocalSpacing.current
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        Text("Free time (next 7 days)", style = MaterialTheme.typography.labelMedium, color = GvColors.TextMuted)
+        days.forEach { day ->
+            val date = runCatching { java.time.LocalDate.parse(day.date) }.getOrNull()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                Text(date?.format(FreeDayFormatter) ?: day.date, style = MaterialTheme.typography.bodyMedium, color = GvColors.Text, modifier = Modifier.weight(1f))
+                Text(formatFreeHours(day.free_hours), style = MaterialTheme.typography.bodyMedium, color = GvColors.Text)
+                Text("/ ${formatFreeHours(day.capacity_hours)}", style = MaterialTheme.typography.bodyMedium, color = GvColors.TextMuted)
+            }
+        }
+    }
 }

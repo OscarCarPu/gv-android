@@ -35,6 +35,8 @@ wide. It is absent from the `lights` flavour, like every tab but Lights.
 - **Accounts**: connect (browser consent), reconnect when Google rejects the grant, rebuild
   (resync), disconnect.
 - **Live updates** over `GET /calendar/stream`, and **offline reading** from the Room cache.
+- **Create plan from an event** — the calendar's link to the Tasks plan (see below), and the
+  **free-time panel** on the calendars sheet.
 
 ## What's OUT
 
@@ -61,11 +63,40 @@ wide. It is absent from the `lights` flavour, like every tab but Lights.
 | `data/repository/CalendarRepository.kt` | Online-first store. Cache reads, range refetch, calendar preferences, account management, event writes. |
 | `ui/calendar/CalendarUtils.kt` | The pure logic: range maths, day placement, lane layout, recurrence presets, colour ink, instant conversion. Unit-tested. |
 | `ui/calendar/CalendarViewModel.kt` | `state: StateFlow<CalendarUiState>`, `accounts`, `toast`, `openUrl`. Owns the range and the stream subscription. |
-| `ui/calendar/CalendarScreen.kt` | Header (title, prev/next, live dot, mode chips, Today, calendars button), the view host, the FAB and the sheets. Also `openInBrowser`. |
+| `ui/calendar/CalendarScreen.kt` | Header (title, prev/next, live dot, the **New** button, calendars button, mode chips, Today), the view host and the sheets. Also `openInBrowser`. |
 | `ui/calendar/CalendarViews.kt` | `MonthView` (grid + agenda) and `TimeGridView` (week and day). |
 | `ui/calendar/EventSheet.kt` | Create/edit/read-only sheet for one event or occurrence. |
-| `ui/calendar/CalendarsSheet.kt` | Calendars grouped by account: visibility dot, sync switch, account actions. |
+| `ui/calendar/CalendarsSheet.kt` | Calendars grouped by account: visibility dot, sync switch, account actions, and the free-time panel. |
+| `ui/calendar/PlanFromEvent.kt`, `PlanFromEventSheet.kt` | "Create plan" on an event: the pure checks (unit-tested) and the sheet. |
 | `ui/calendar/CalendarFields.kt` | The form controls those two sheets are built from. |
+
+---
+
+## The plan link
+
+As on the web, an event can become a plan block (`PlanFromEvent.kt`, `PlanFromEventSheet.kt`).
+The event sheet's **Create plan** opens a sheet with a task choice — *No task*, *Existing*
+(the shared task picker) or *New* (a task made on the spot) — and a start and end. It opens on
+the event's own times; an all-day event has none, so it opens on 09:00–10:00 of its first day
+where the web leaves the fields empty.
+
+- **The order is task → event times → block**, like the web, so a failure part-way leaves earlier
+  steps done rather than a block pointing at nothing. Unlike the web, a task created for a plan
+  whose block then fails is **deleted again**: the block is refused whenever it overlaps one
+  already in the plan (a recurring commitment, say), and each retry would otherwise leave another
+  orphan task.
+- **Errors show inside the sheet.** A snackbar sits under a modal sheet's scrim, so a refusal
+  ("plan block overlaps with an existing one") would go unseen.
+- **The event is rescheduled only when it has to be.** Times are compared as *instants*: the API
+  writes a calendar's own offset (`+02:00`) where the picker yields `Z`, and comparing the strings
+  would call an unchanged event changed and send Google a needless write. An **all-day event is
+  never rescheduled** — it is a date, and giving its plan block a time must not rewrite it into a
+  timed event.
+- **Which events already have a plan** is read with each range (`GET /plan/range`, matching a
+  block's `event_ref` to the event's `instance_id`) and shown as "In your plan" in place of the
+  button. Like the free-time panel it is read live and not cached: offline it is simply absent.
+- **Free time (next 7 days)** on the calendars sheet is `GET /capacity/free-busy`, each day's
+  free hours out of its capacity, minutes included (`5h 30m / 14h`), as on the web's sidebar.
 
 ---
 

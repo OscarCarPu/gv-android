@@ -1,5 +1,7 @@
 package com.gv.app.ui.calendar
 
+import androidx.compose.material.icons.filled.Add
+import com.gv.app.ui.common.SmallButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -91,6 +93,9 @@ fun EventSheet(
     calendars: List<GoogleCalendar>,
     defaultCalendarId: Int?,
     vm: CalendarViewModel,
+    /** Whether this event already has a plan block linked to it. */
+    hasPlan: Boolean,
+    onCreatePlan: (CalendarEvent) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -181,6 +186,14 @@ fun EventSheet(
                 style = MaterialTheme.typography.titleMedium,
                 color = GvColors.Text,
             )
+
+            if (event != null) {
+                if (hasPlan) {
+                    Text("In your plan", style = MaterialTheme.typography.labelMedium, color = GvColors.Success)
+                } else {
+                    SmallButton("Create plan", { onCreatePlan(event) }, icon = Icons.Filled.Add)
+                }
+            }
 
             if (readOnly) {
                 ReadOnlyNotice(event)

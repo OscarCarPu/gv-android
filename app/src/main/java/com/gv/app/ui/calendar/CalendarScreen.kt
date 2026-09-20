@@ -1,5 +1,6 @@
 package com.gv.app.ui.calendar
 
+import com.gv.app.ui.common.SmallButton
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -22,7 +23,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -83,7 +83,12 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
 
     Box(Modifier.fillMaxSize().background(GvColors.Bg)) {
         Column(Modifier.fillMaxSize()) {
-            CalendarHeader(state = state, vm = vm, onOpenCalendars = { sheet = CalendarSheet.Calendars })
+            CalendarHeader(
+                state = state,
+                vm = vm,
+                onOpenCalendars = { sheet = CalendarSheet.Calendars },
+                onNewEvent = { sheet = CalendarSheet.Event(EventSheetTarget.New(state.anchor, null)) },
+            )
 
             if (state.loading) {
                 LinearProgressIndicator(
@@ -125,19 +130,6 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
             }
         }
 
-        FloatingActionButton(
-            onClick = {
-                sheet = CalendarSheet.Event(EventSheetTarget.New(state.anchor, null))
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp),
-            containerColor = GvColors.Primary,
-            contentColor = Color.White,
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "New event")
-        }
-
         SnackbarHost(
             hostState = snackbar,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -149,6 +141,7 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
     when (val open = sheet) {
         is CalendarSheet.Calendars -> CalendarsSheet(
             calendars = state.calendars,
+            freeBusy = state.freeBusy,
             vm = vm,
             onDismiss = { sheet = null },
         )
@@ -157,6 +150,14 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
             target = open.target,
             calendars = state.calendars,
             defaultCalendarId = state.defaultCalendarId,
+            vm = vm,
+            hasPlan = (open.target as? EventSheetTarget.Existing)?.event?.let { state.hasPlan(it.instance_id) } == true,
+            onCreatePlan = { sheet = CalendarSheet.PlanFromEvent(it) },
+            onDismiss = { sheet = null },
+        )
+
+        is CalendarSheet.PlanFromEvent -> PlanFromEventSheet(
+            event = open.event,
             vm = vm,
             onDismiss = { sheet = null },
         )
@@ -168,6 +169,7 @@ fun CalendarScreen(vm: CalendarViewModel = viewModel()) {
 private sealed interface CalendarSheet {
     data object Calendars : CalendarSheet
     data class Event(val target: EventSheetTarget) : CalendarSheet
+    data class PlanFromEvent(val event: com.gv.app.domain.model.CalendarEvent) : CalendarSheet
 }
 
 @Composable
@@ -175,6 +177,7 @@ private fun CalendarHeader(
     state: CalendarUiState,
     vm: CalendarViewModel,
     onOpenCalendars: () -> Unit,
+    onNewEvent: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
     Column(Modifier.fillMaxWidth().background(GvColors.BgLight)) {
@@ -224,6 +227,9 @@ private fun CalendarHeader(
                     modifier = Modifier.size(18.dp),
                 )
             }
+            // The web's toolbar button, in place of a floating one; disabled when there is no
+            // calendar an event could be created on.
+            SmallButton("New", onNewEvent, enabled = state.writableCalendars.isNotEmpty(), icon = Icons.Filled.Add)
             IconButton(onClick = onOpenCalendars) {
                 Icon(
                     Icons.Outlined.Tune,
