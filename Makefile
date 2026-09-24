@@ -2,19 +2,19 @@ APP_ID       := com.gv.app
 APP_ID_DEBUG := $(APP_ID).debug
 ACTIVITY     := $(APP_ID_DEBUG)/$(APP_ID).MainActivity
 
-# The lights-only build is a separate app (its own applicationId), so both install at once.
-LIGHTS_APP_ID       := $(APP_ID).lights
-LIGHTS_APP_ID_DEBUG := $(LIGHTS_APP_ID).debug
-LIGHTS_ACTIVITY     := $(LIGHTS_APP_ID_DEBUG)/$(APP_ID).MainActivity
+# The semiprivate build is a separate app (its own applicationId), so both install at once.
+SEMI_APP_ID         := $(APP_ID).semiprivate
+SEMI_APP_ID_DEBUG   := $(SEMI_APP_ID).debug
+SEMI_ACTIVITY       := $(SEMI_APP_ID_DEBUG)/$(APP_ID).MainActivity
 
 APK_DEBUG       := app/build/outputs/apk/full/debug/app-full-debug.apk
 APK_RELEASE     := app/build/outputs/apk/full/release/app-full-release.apk
-LIGHTS_APK_DEBUG   := app/build/outputs/apk/lights/debug/app-lights-debug.apk
-LIGHTS_APK_RELEASE := app/build/outputs/apk/lights/release/app-lights-release.apk
+SEMI_APK_DEBUG     := app/build/outputs/apk/semiprivate/debug/app-semiprivate-debug.apk
+SEMI_APK_RELEASE   := app/build/outputs/apk/semiprivate/release/app-semiprivate-release.apk
 
 .PHONY: build release install run clean uninstall log devices hooks \
         test lint check test-device \
-        build-lights release-lights install-lights run-lights uninstall-lights log-lights
+        build-semi release-semi install-semi run-semi uninstall-semi log-semi
 
 ## Configure git to use the tracked hooks in .githooks/
 hooks:
@@ -55,38 +55,38 @@ log:
 	adb logcat --pid=$$(adb shell pidof -s $(APP_ID_DEBUG))
 
 # ---------------------------------------------------------------------------
-# Lights-only build ("GV Lights") — the Lights tab on its own, as a phone remote.
+# Semiprivate build ("GV Semiprivate") — Lights and Rutas, signed in with the semiprivate password.
 # Separate applicationId, so it lives beside the full app rather than replacing it.
 # ---------------------------------------------------------------------------
 
-## Build the lights-only debug APK
-build-lights:
-	./gradlew assembleLightsDebug
+## Build the semiprivate debug APK
+build-semi:
+	./gradlew assembleSemiprivateDebug
 
-## Build the lights-only release APK and install it (daily-driver build)
-release-lights:
+## Build the semiprivate release APK and install it (daily-driver build)
+release-semi:
 	@NEW=$$(awk -F= '/^versionCode=/ { print $$2+1; exit }' version.properties) && \
 	 sed -i "s/^versionCode=.*/versionCode=$$NEW/" version.properties && \
 	 echo "versionCode → $$NEW"
-	./gradlew assembleLightsRelease
-	adb install -r $(LIGHTS_APK_RELEASE)
+	./gradlew assembleSemiprivateRelease
+	adb install -r $(SEMI_APK_RELEASE)
 
-## Build and install the lights-only debug APK
-install-lights: build-lights
-	adb install -r $(LIGHTS_APK_DEBUG)
+## Build and install the semiprivate debug APK
+install-semi: build-semi
+	adb install -r $(SEMI_APK_DEBUG)
 
-## Build, install, and launch the lights-only app
-run-lights: install-lights
+## Build, install, and launch the semiprivate app
+run-semi: install-semi
 	adb reverse tcp:8080 tcp:8080
-	adb shell am start -n $(LIGHTS_ACTIVITY)
+	adb shell am start -n $(SEMI_ACTIVITY)
 
-## Uninstall the lights-only debug app
-uninstall-lights:
-	adb uninstall $(LIGHTS_APP_ID_DEBUG)
+## Uninstall the semiprivate debug app
+uninstall-semi:
+	adb uninstall $(SEMI_APP_ID_DEBUG)
 
-## Stream logcat filtered to the lights-only app
-log-lights:
-	adb logcat --pid=$$(adb shell pidof -s $(LIGHTS_APP_ID_DEBUG))
+## Stream logcat filtered to the semiprivate app
+log-semi:
+	adb logcat --pid=$$(adb shell pidof -s $(SEMI_APP_ID_DEBUG))
 
 # ---------------------------------------------------------------------------
 # Shared

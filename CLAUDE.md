@@ -11,20 +11,21 @@ GV-Android is the Android client for gestor-vida. The app currently contains: au
 Two product flavours ship from this codebase, so every Gradle task name carries one:
 
 - **`full`** — the whole app (`com.gv.app`).
-- **`lights`** — a lights-only remote, "GV Lights" (`com.gv.app.lights`). Same code, but it
-  opens straight onto the Lights tab with no bottom bar. Its own applicationId, so both
-  install side by side. Lights only, not the rest of Domotics: printers are an ffmpeg/RTSP
-  stream, which belongs in a browser.
+- **`semiprivate`** — "GV Semiprivate" (`com.gv.app.semiprivate`): Lights and Rutas only, the
+  endpoints gv-api opens to the semiprivate password, and it auto-logs in with that password
+  (`AUTH_SEMIPRIVATE_PASSWORD`, a 30-day `semi` token, no 2FA). Same code, gated by
+  `BuildConfig.SEMIPRIVATE`; its own applicationId, so both install side by side. Not printers:
+  those are an ffmpeg/RTSP stream, which belongs in a browser.
 
-Each target has a `-lights` twin:
+Each target has a `-semi` twin:
 
 ```bash
-make build / build-lights        # assemble{Full,Lights}Debug
-make run   / run-lights          # build + install + adb reverse tcp:8080 + launch
-make install / install-lights    # build + adb install debug APK
-make release / release-lights    # bump versionCode, assemble release, install
-make uninstall / uninstall-lights
-make log / log-lights            # logcat filtered to that app's PID
+make build / build-semi          # assemble{Full,Semiprivate}Debug
+make run   / run-semi            # build + install + adb reverse tcp:8080 + launch
+make install / install-semi      # build + adb install debug APK
+make release / release-semi      # bump versionCode, assemble release, install
+make uninstall / uninstall-semi
+make log / log-semi              # logcat filtered to that app's PID
 make clean, make devices, make test (JVM), make lint, make check, make test-device
 ```
 
@@ -145,7 +146,7 @@ rules that bite are:
 
 ## Navigation
 
-Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `HomeScreen`, which itself owns the bottom-tab navigation between feature screens: **Tasks → Finance → Calendar → Habits → Otros**. Otros groups the secondary features as sub-tabs (Lights, Rutas, Alarma). The `lights` flavour skips all of that and renders `LightsScreen` alone.
+Two routes: `login` → `home`, defined in `ui/navigation/AppNavigation.kt`. The `home` route hosts `HomeScreen`, which itself owns the bottom-tab navigation between feature screens: **Tasks → Finance → Calendar → Habits → Otros**. Otros groups the secondary features as sub-tabs (Lights, Rutas, Alarma). The `semiprivate` flavour has a two-tab bar instead: **Lights → Rutas**.
 
 ## Data layer — online-first, offline read-only
 
@@ -176,6 +177,9 @@ The app talks to **gv-api** and nothing else. All logic lives there; this app is
 baked in via `buildConfigField`. It answers the API's 2FA step itself with `Totp`, a hand-rolled
 RFC 6238 implementation (~40 lines, no dependency). This runs in **every** build type, not just
 debug. Leaving either value empty disables it and the manual login screen takes over.
+The `semiprivate` flavour signs in with `AUTH_SEMIPRIVATE_PASSWORD` instead (no TOTP step), and
+only background-refreshes rutas — any private endpoint would 401 its token and sign it out.
+Whenever a 401 drops the token, `GvApp` signs in again.
 
 Both factors therefore ship inside the APK, so 2FA is not a second factor for anyone holding
 the file — an accepted trade for a household app on known phones.

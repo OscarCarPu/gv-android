@@ -1,7 +1,6 @@
 package com.gv.app.data.auth
 
 import android.util.Log
-import com.gv.app.BuildConfig
 import com.gv.app.data.api.ApiService
 import com.gv.app.data.local.TokenManager
 import com.gv.app.domain.model.LoginRequest
@@ -20,18 +19,23 @@ import com.gv.app.domain.model.TwoFactorRequest
  * on known phones, and the alternative is typing a password and a rotating code on every
  * cold start.
  *
- * Leaving either value empty disables the whole thing and the normal login screen takes over,
+ * The `semiprivate` flavour instead signs in with the semiprivate password (`totpSecret = null`):
+ * gv-api answers that one with a 30-day `semi` token straight away, no second step, and the
+ * lights and rutas endpoints accept it. See [com.gv.app.di.AppContainer.autoLogin].
+ *
+ * Leaving a needed value empty disables the whole thing and the normal login screen takes over,
  * which is what happens automatically for anyone building without those keys in their `.env`.
  */
 class AutoLogin(
     private val api: ApiService,
     private val tokenManager: TokenManager,
-    private val password: String = BuildConfig.AUTH_PASSWORD,
-    private val totpSecret: String = BuildConfig.AUTH_TOTP_SECRET,
+    private val password: String,
+    /** Null for the semiprivate tier, whose password alone is the session. */
+    private val totpSecret: String?,
 ) {
 
     val isConfigured: Boolean
-        get() = password.isNotBlank() && totpSecret.isNotBlank()
+        get() = password.isNotBlank() && (totpSecret == null || totpSecret.isNotBlank())
 
     /**
      * Attempts a full sign-in. Returns true when a token was stored.
@@ -49,6 +53,18 @@ class AutoLogin(
             if (!first.isSuccessful || firstToken.isNullOrBlank()) {
                 Log.w(TAG, "auto-login: password step failed (${first.code()})")
                 return false
+            }
+
+            // A token of the wrong tier means the wrong password was baked into this build:
+            // a semi token in the full app would be refused by every private endpoint.
+            val semi = first.body()?.isSemiprivate == true
+            if (semi != (totpSecret == null)) {
+                Log.w(TAG, "auto-login: password is for the wrong tier (${first.body()?.kind})")
+                return false
+            }
+            if (totpSecret == null) {
+                tokenManager.saveToken(firstToken)
+                return true
             }
 
             // The API answers the password step with a short-lived token that only the 2FA

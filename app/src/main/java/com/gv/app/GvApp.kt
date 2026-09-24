@@ -6,6 +6,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.gv.app.di.AppContainer
 import com.gv.app.spotify.SpotifyAuth
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
@@ -29,7 +30,9 @@ class GvApp : Application() {
     }
 
     /**
-     * Fire-and-forget sign-in. Nothing waits on it: navigation is driven by
+     * Fire-and-forget sign-in, at launch and again whenever the token is dropped (a 401 clears
+     * it — an expired session, which for the semiprivate app's 30-day token is routine).
+     * Nothing waits on it: navigation is driven by
      * [com.gv.app.data.local.TokenManager.tokenFlow], so the login screen shows for the moment
      * this takes and then moves on by itself when the token lands. If no credentials were baked
      * in, or the attempt fails, the manual login screen is simply what remains.
@@ -37,7 +40,9 @@ class GvApp : Application() {
     private fun signInIfConfigured() {
         val autoLogin = container.autoLogin
         if (!autoLogin.isConfigured) return
-        container.appScope.launch { autoLogin.attempt() }
+        container.appScope.launch {
+            container.tokenManager.tokenFlow.filter { it == null }.collect { autoLogin.attempt() }
+        }
     }
 
     private fun initBackgroundRefresh() {

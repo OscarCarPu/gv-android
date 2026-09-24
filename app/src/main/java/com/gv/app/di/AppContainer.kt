@@ -55,8 +55,18 @@ class AppContainer(context: Context) {
 
     val syncScheduler: SyncScheduler = SyncScheduler(appContext)
 
-    /** Signs in from build-time credentials; inert when they are absent. */
-    val autoLogin: AutoLogin = AutoLogin(apiService, tokenManager)
+    /**
+     * Signs in from build-time credentials; inert when they are absent. The `semiprivate`
+     * flavour signs in with the semiprivate password: it only ever calls the lights and rutas
+     * endpoints, which accept that tier, so it never needs (or ships) the full password and
+     * TOTP secret.
+     */
+    val autoLogin: AutoLogin =
+        if (BuildConfig.SEMIPRIVATE) {
+            AutoLogin(apiService, tokenManager, BuildConfig.AUTH_SEMIPRIVATE_PASSWORD, totpSecret = null)
+        } else {
+            AutoLogin(apiService, tokenManager, BuildConfig.AUTH_PASSWORD, BuildConfig.AUTH_TOTP_SECRET)
+        }
 
     // --- Repositories ---
 
@@ -99,13 +109,20 @@ class AppContainer(context: Context) {
         calendarStream,
     )
 
-    // Lights are absent on purpose: they keep no cache, so there is nothing to warm up.
-    private val repositories: List<Any> = listOf(
-        habitRepository,
-        taskRepository,
-        rutasRepository,
-        calendarRepository,
-    )
+    // Lights are absent on purpose: they keep no cache, so there is nothing to warm up. The
+    // semiprivate build refreshes only what its token may read: anything else answers 401,
+    // which signs it out.
+    private val repositories: List<Any> =
+        if (BuildConfig.SEMIPRIVATE) {
+            listOf(rutasRepository)
+        } else {
+            listOf(
+                habitRepository,
+                taskRepository,
+                rutasRepository,
+                calendarRepository,
+            )
+        }
 
     val cacheRefreshers: List<CacheRefresher> = repositories.filterIsInstance<CacheRefresher>()
 

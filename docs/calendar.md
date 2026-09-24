@@ -15,7 +15,7 @@ This client renders occurrences and collects edits, and in particular **never ex
 recurrence rule itself** — `GET /calendar/events` already returns occurrences.
 
 The feature lives under the **Calendar** bottom-nav tab in `HomeScreen`, which is now six tabs
-wide. It is absent from the `lights` flavour, like every tab but Lights.
+wide. It is absent from the `semiprivate` flavour, like every tab but Lights and Rutas.
 
 ---
 

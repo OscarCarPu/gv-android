@@ -15,6 +15,8 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +45,7 @@ import com.gv.app.ui.domotics.LightsScreen
 import com.gv.app.ui.habits.HabitsScreen
 import com.gv.app.ui.money.MoneyScreen
 import com.gv.app.ui.otros.OtrosScreen
+import com.gv.app.ui.rutas.RutasScreen
 import com.gv.app.ui.tasks.TasksScreen
 import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
@@ -57,17 +60,22 @@ private enum class HomeTab(val label: String, val icon: ImageVector) {
     CALENDAR("Calendar", Icons.Outlined.CalendarMonth),
     HABITS("Habits", Icons.Outlined.CheckCircle),
     OTROS("Otros", Icons.Outlined.MoreHoriz),
+
+    // The `semiprivate` flavour's tabs: only what the semiprivate token may reach.
+    LIGHTS("Lights", Icons.Outlined.Lightbulb),
+    RUTAS("Rutas", Icons.Outlined.Map),
 }
+
+private val homeTabs: List<HomeTab> =
+    if (BuildConfig.SEMIPRIVATE) {
+        listOf(HomeTab.LIGHTS, HomeTab.RUTAS)
+    } else {
+        listOf(HomeTab.TASKS, HomeTab.FINANCE, HomeTab.CALENDAR, HomeTab.HABITS, HomeTab.OTROS)
+    }
 
 @Composable
 fun HomeScreen() {
-    // The `lights` flavour is a single-purpose remote: no bottom bar, straight onto Lights.
-    if (BuildConfig.LIGHTS_ONLY) {
-        HomeFrame(title = "Lights", bottomBar = {}) { LightsScreen() }
-        return
-    }
-
-    var selected by rememberSaveable { mutableStateOf(HomeTab.TASKS) }
+    var selected by rememberSaveable { mutableStateOf(homeTabs.first()) }
     HomeFrame(
         title = selected.label,
         bottomBar = { GvNavigationBar(selected = selected, onSelect = { selected = it }) },
@@ -78,6 +86,8 @@ fun HomeScreen() {
             HomeTab.CALENDAR -> CalendarScreen()
             HomeTab.HABITS -> HabitsScreen()
             HomeTab.OTROS -> OtrosScreen()
+            HomeTab.LIGHTS -> LightsScreen()
+            HomeTab.RUTAS -> RutasScreen()
         }
     }
 }
@@ -134,7 +144,7 @@ private fun GvNavigationBar(
         containerColor = GvColors.BgLight,
         contentColor = GvColors.Text,
     ) {
-        HomeTab.entries.forEach { tab ->
+        homeTabs.forEach { tab ->
             NavigationBarItem(
                 selected = selected == tab,
                 onClick = { onSelect(tab) },
