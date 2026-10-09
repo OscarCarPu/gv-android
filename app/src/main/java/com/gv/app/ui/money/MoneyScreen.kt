@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gv.app.domain.model.Account
+import com.gv.app.domain.model.BudgetItem
 import com.gv.app.domain.model.Category
 import com.gv.app.domain.model.Overview
 import com.gv.app.domain.model.Transaction
@@ -48,6 +49,7 @@ import com.gv.app.ui.theme.LocalSpacing
 
 private enum class MoneyTab(val label: String) {
     OVERVIEW("Overview"),
+    BUDGETS("Budgets"),
     ACCOUNTS("Accounts"),
     CATEGORIES("Categories"),
 }
@@ -56,16 +58,20 @@ private sealed class ActiveSheet {
     data class Transaction(val editing: com.gv.app.domain.model.Transaction? = null) : ActiveSheet()
     data class EditAccount(val account: Account?) : ActiveSheet()
     data class EditCategory(val category: Category?) : ActiveSheet()
+    data class EditBudget(val item: BudgetItem?) : ActiveSheet()
 }
 
 /**
- * The Money screen: Overview | Accounts | Categories as swipeable pages, each with the web's
+ * The Money screen: Overview | Budgets | Accounts | Categories as swipeable pages, each with the web's
  * header button (**+ Transaction**, **New**) instead of a floating one. Deletes are immediate and
  * the only dialog left is the "no accounts yet" nudge when there is nowhere to put a transaction.
  */
 @Composable
-fun MoneyScreen(vm: MoneyViewModel = viewModel()) {
+fun MoneyScreen(vm: MoneyViewModel = viewModel(), budgetsVm: BudgetsViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val budgetsState by budgetsVm.state.collectAsStateWithLifecycle()
+    val budgetMonth by budgetsVm.month.collectAsStateWithLifecycle()
+    val expandedBudget by budgetsVm.expanded.collectAsStateWithLifecycle()
     val list by vm.transactions.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableStateOf(MoneyTab.OVERVIEW) }
@@ -80,6 +86,7 @@ fun MoneyScreen(vm: MoneyViewModel = viewModel()) {
         if (pagerState.currentPage != tab.ordinal) pagerState.animateScrollToPage(tab.ordinal)
     }
     LaunchedEffect(vm) { vm.toast.collect { message -> snackbar.showSnackbar(message) } }
+    LaunchedEffect(budgetsVm) { budgetsVm.toast.collect { message -> snackbar.showSnackbar(message) } }
 
     Box(modifier = Modifier.fillMaxSize().background(GvColors.Bg)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -105,6 +112,20 @@ fun MoneyScreen(vm: MoneyViewModel = viewModel()) {
                             onSelectAccount = vm::selectAccount,
                             onShowMore = vm::showMore,
                         )
+                        MoneyTab.BUDGETS -> when (val b = budgetsState) {
+                            is BudgetsUiState.Loading -> CenteredLoader()
+                            is BudgetsUiState.Error -> ErrorState(b.message, onRetry = budgetsVm::refresh)
+                            is BudgetsUiState.Loaded -> BudgetsTab(
+                                data = b.data,
+                                month = budgetMonth,
+                                expanded = expandedBudget,
+                                onMonth = budgetsVm::goMonth,
+                                onNew = { sheet = ActiveSheet.EditBudget(null) },
+                                onEdit = { sheet = ActiveSheet.EditBudget(it) },
+                                onToggle = budgetsVm::toggle,
+                                onShowMore = budgetsVm::showMore,
+                            )
+                        }
                         MoneyTab.ACCOUNTS -> AccountsTab(
                             accounts = s.data.accounts,
                             onNew = { sheet = ActiveSheet.EditAccount(null) },
@@ -168,6 +189,23 @@ fun MoneyScreen(vm: MoneyViewModel = viewModel()) {
                     vm.saveCategory(s.category?.id, name, type, parentId) { ok -> if (ok) sheet = null }
                 },
             )
+        }
+        is ActiveSheet.EditBudget -> {
+            val budgets = (budgetsState as? BudgetsUiState.Loaded)?.data
+            if (data != null && budgets != null) {
+                BudgetFormSheet(
+                    item = s.item,
+                    categories = data.categories,
+                    budgets = budgets,
+                    onDismiss = { sheet = null },
+                    onSave = { categoryId, amount, scope, period ->
+                        budgetsVm.save(s.item, categoryId, amount, scope, period) { ok -> if (ok) sheet = null }
+                    },
+                    onRemove = { scope ->
+                        s.item?.let { budgetsVm.remove(it, scope) { ok -> if (ok) sheet = null } }
+                    },
+                )
+            }
         }
         null -> Unit
     }

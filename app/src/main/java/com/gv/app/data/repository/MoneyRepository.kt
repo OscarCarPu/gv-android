@@ -2,6 +2,9 @@ package com.gv.app.data.repository
 
 import com.gv.app.data.api.ApiService
 import com.gv.app.domain.model.Account
+import com.gv.app.domain.model.BudgetMonth
+import com.gv.app.domain.model.OverviewTransaction
+import com.gv.app.domain.model.SetBudgetRequest
 import com.gv.app.domain.model.Category
 import com.gv.app.domain.model.CreateAccountRequest
 import com.gv.app.domain.model.CreateCategoryRequest
@@ -113,5 +116,24 @@ class MoneyRepository(
     suspend fun deleteCategory(id: Int): ApiResult<Unit> {
         gate.requireOnline()?.let { return it }
         return safeApiCallNoBody { api.deleteCategory(id) }
+    }
+
+    // ----- Budgets -----
+
+    /** A month's budgets against actuals (`month` is `YYYY-MM`). Live, like the rest of money. */
+    suspend fun budgets(month: String): ApiResult<BudgetMonth> = safeApiCall { api.getBudgets(month) }
+
+    /** The transactions a budget counted in the month (or the year, for a yearly one), newest first. */
+    suspend fun budgetTransactions(categoryId: Int, month: String, period: String): ApiResult<List<OverviewTransaction>> =
+        safeApiCall { api.getBudgetTransactions(categoryId, month, period) }
+
+    suspend fun setBudget(categoryId: Int, request: SetBudgetRequest): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCallNoBody { api.setBudget(categoryId, request) }
+    }
+
+    suspend fun deleteBudget(categoryId: Int, month: String, scope: String, period: String): ApiResult<Unit> {
+        gate.requireOnline()?.let { return it }
+        return safeApiCallNoBody { api.deleteBudget(categoryId, month, scope, period) }
     }
 }

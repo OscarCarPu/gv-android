@@ -46,7 +46,13 @@ internal fun signed(v: Double): String {
 }
 
 @Composable
-internal fun KpiTile(title: String, value: String, tone: TileTone, modifier: Modifier = Modifier) {
+internal fun KpiTile(
+    title: String,
+    value: String,
+    tone: TileTone,
+    modifier: Modifier = Modifier,
+    sub: List<String> = emptyList(),
+) {
     val spacing = LocalSpacing.current
     val valueColor = when (tone) {
         TileTone.POS -> GvColors.Success
@@ -72,14 +78,17 @@ internal fun KpiTile(title: String, value: String, tone: TileTone, modifier: Mod
             color = valueColor,
             fontWeight = FontWeight.SemiBold,
         )
+        sub.forEach {
+            Text(text = it, style = MaterialTheme.typography.labelSmall, color = GvColors.TextMuted)
+        }
     }
 }
 
 @Composable
 internal fun TxRow(
     tx: OverviewTransaction,
-    onClick: () -> Unit,
-    onDelete: () -> Unit,
+    onClick: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     val spacing = LocalSpacing.current
     val sign = amountSign(tx.type)
@@ -101,7 +110,7 @@ internal fun TxRow(
             .clip(RoundedCornerShape(10.dp))
             .background(GvColors.BgLight)
             .border(1.dp, GvColors.BorderLight, RoundedCornerShape(10.dp))
-            .clickable { onClick() }
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(horizontal = spacing.lg, vertical = spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
@@ -132,13 +141,15 @@ internal fun TxRow(
             color = amountColor,
             fontWeight = FontWeight.SemiBold,
         )
-        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-            Icon(
-                imageVector = Icons.Filled.Delete,
-                contentDescription = "Delete",
-                tint = GvColors.TextMuted,
-                modifier = Modifier.size(18.dp),
-            )
+        if (onDelete != null) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = "Delete",
+                    tint = GvColors.TextMuted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

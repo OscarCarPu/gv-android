@@ -2,9 +2,11 @@ package com.gv.app.data.api
 
 import com.gv.app.domain.model.Account
 import com.gv.app.domain.model.AuthUrlResponse
+import com.gv.app.domain.model.BudgetMonth
 import com.gv.app.domain.model.CalendarAccount
 import com.gv.app.domain.model.CalendarEvent
 import com.gv.app.domain.model.CreateEventRequest
+import com.gv.app.domain.model.SetBudgetRequest
 import com.gv.app.domain.model.CreateHabitRequest
 import com.gv.app.domain.model.GoogleCalendar
 import com.gv.app.domain.model.MoveEventRequest
@@ -26,6 +28,7 @@ import com.gv.app.domain.model.LightState
 import com.gv.app.domain.model.LightStatesResponse
 import com.gv.app.domain.model.LoginRequest
 import com.gv.app.domain.model.Overview
+import com.gv.app.domain.model.OverviewTransaction
 import com.gv.app.domain.model.TokenResponse
 import com.gv.app.domain.model.Transaction
 import com.gv.app.domain.model.TwoFactorRequest
@@ -142,6 +145,27 @@ interface ApiService {
 
     @DELETE("finance/transactions/{id}")
     suspend fun deleteTransaction(@Path("id") id: Int): Response<Unit>
+
+    @GET("finance/budgets")
+    suspend fun getBudgets(@Query("month") month: String): Response<BudgetMonth>
+
+    @GET("finance/budgets/{categoryId}/transactions")
+    suspend fun getBudgetTransactions(
+        @Path("categoryId") categoryId: Int,
+        @Query("month") month: String,
+        @Query("period") period: String,
+    ): Response<List<OverviewTransaction>>
+
+    @PUT("finance/budgets/{categoryId}")
+    suspend fun setBudget(@Path("categoryId") categoryId: Int, @Body request: SetBudgetRequest): Response<Unit>
+
+    @DELETE("finance/budgets/{categoryId}")
+    suspend fun deleteBudget(
+        @Path("categoryId") categoryId: Int,
+        @Query("month") month: String,
+        @Query("scope") scope: String,
+        @Query("period") period: String,
+    ): Response<Unit>
 
     // --- Tasks ---
 

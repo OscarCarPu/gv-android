@@ -2,7 +2,7 @@
 
 Source: `app/src/main/java/com/gv/app/ui/money/`, `domain/model/Money.kt`, `data/repository/MoneyRepository.kt`, `data/api/ApiService.kt`
 
-Client for the `gv-api` `/finance/*` endpoints, following gv-web's `/money` page: the six summary tiles, the recent transactions (or one account's whole history), and accounts and categories with create / edit / delete. The stats sheets and charts from the web (net worth, breakdown, monthly trend, estimation) are deliberately not ported.
+Client for the `gv-api` `/finance/*` endpoints, following gv-web's `/money` page: the six summary tiles, the recent transactions (or one account's whole history), budgets against actuals, and accounts and categories with create / edit / delete. The stats sheets and charts from the web (net worth, breakdown, monthly trend, estimation) are deliberately not ported.
 
 The feature is reached via the **Finance** tab in `HomeScreen`'s bottom navigation.
 
@@ -12,13 +12,22 @@ Like the rest of the app it is **online-first, offline read-only** — with one 
 
 ## Layout
 
-Three swipeable pages under a tab bar — **Overview**, **Accounts**, **Categories** — each with the web's header button (**+ Transaction**, **New**) rather than a floating one.
+Four swipeable pages under a tab bar — **Overview**, **Budgets**, **Accounts**, **Categories** — each with the web's header button (**+ Transaction**, **New**) rather than a floating one.
 
 ### Overview (`OverviewTab.kt`)
 
 - **Summary** — six tiles in the web's order and words: Total accounts, Monthly income, Monthly expenses, Monthly balance, Savings, % vs prev month. **+ Transaction** is disabled until there is an account to put one on.
 - **Transactions** — the last 30 days, grouped by day (`Today` / `Yesterday` / `EEE, d MMM`), or, with an account picked in the filter beside the title, **that account's whole history** (`GET /finance/transactions?account_id=`). The list folds at **15** and "N more" unfolds 10 at a time.
 - A row shows a type badge (In / Out / Tx), the description or category, `source → destination` for a transfer, and the signed amount. **Tapping a row** fetches the full `Transaction` (`GET /finance/transactions/{id}`) and opens the edit sheet — the overview rows are name-based and lack the ids the form needs. The trash icon deletes at once.
+
+### Budgets (`BudgetsTab.kt`, `BudgetFormSheet.kt`, `BudgetsViewModel.kt`)
+
+Follows the web's `/money/budgets`. A month navigator (prev / next / jump to this month), **+ Budget**, four tiles — **Spent** (of budgeted), **Earned**, **Balance** (income − expenses actual so far, of the *planned* balance) and **Off budget** (unbudgeted + overspent) — then the monthly rows grouped Expenses / Income and, when there are any, the year's **Yearly** rows with their own summary.
+
+- A row: name (indented by `depth` for nested budgets), `actual / budget`, percent (`✓` for a met income budget), a bar capped at full and coloured by `status`, a tick where the period has got to (only while it is running — `runningPace`), "N left / over" or "N to go / above", and "since Mar 2026" (or the bare year). The pen edits.
+- **Tapping a row** loads the transactions it counted (`GET /finance/budgets/{category}/transactions?month=&period=`): read-only rows grouped by day, folded at 15 and unfolded 10 at a time. One row is open at a time, and changing month collapses it.
+- **The sheet** creates or edits: category (expense and income only — transfers cannot be budgeted), period (monthly / yearly; fixed once editing), amount with the suggested one a tap away (the 3-month average when monthly, last year's total when yearly), and the scope — **this month onward** (`forward`) or **this month only** (`once`). Editing adds **Remove**, which takes the same scope. `0` is a real budget; a decimal comma is accepted.
+- The API owns the maths (roll-ups, `remaining`, `progress`, `status`, `planned_balance`); the client only chooses what to show. Writes are followed by re-reading the month. The tab keeps no cache, like the rest of money.
 
 ### Accounts (`AccountsTab.kt`)
 
@@ -60,6 +69,7 @@ All pure, ported from gv-web, unit-tested (`MoneyLogicTest`).
 | `ui/money/MoneyScreen.kt` | The shell: tab bar, pager, sheets. |
 | `OverviewTab.kt`, `AccountsTab.kt`, `CategoriesTab.kt`, `MoneyRows.kt` | The pages and their rows. |
 | `TransactionFormSheet.kt`, `AccountFormSheet.kt`, `CategoryFormSheet.kt`, `FormFields.kt` | The `ModalBottomSheet` forms and their fields (a sheet-based dropdown, a date field, the type chips). |
+| `BudgetsTab.kt`, `BudgetFormSheet.kt`, `BudgetsViewModel.kt`, `BudgetLogic.kt` | The Budgets page, its sheet, its own ViewModel (month, open row, writes) and the pure rules ported from the web (`BudgetLogicTest`). |
 | `MoneyLogic.kt`, `MoneyUtils.kt` | The pure rules above, plus category trees and pickers. |
 
 ---
@@ -81,6 +91,10 @@ GET    /finance/transactions/{id}              → Transaction
 POST   /finance/transactions    CreateTransactionRequest
 PUT    /finance/transactions/{id} UpdateTransactionRequest
 DELETE /finance/transactions/{id}
+GET    /finance/budgets?month=YYYY-MM          → BudgetMonth
+GET    /finance/budgets/{category}/transactions?month=&period=  → OverviewTransaction[]
+PUT    /finance/budgets/{category}  { month, amount, scope, period }   (204)
+DELETE /finance/budgets/{category}?month=&scope=&period=               (204)
 ```
 
 `occurred_at` is optional on `POST` (the server defaults it) but required on `PUT`; this client always sends it. The `/finance/stats/*` endpoints exist server-side but are not wired here.
