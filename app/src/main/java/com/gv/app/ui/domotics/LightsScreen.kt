@@ -53,6 +53,30 @@ fun LightsScreen(vm: LightsViewModel = viewModel()) {
                 CircularProgressIndicator(color = GvColors.Primary)
             }
 
+            state.unavailableOnFailover -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(spacing.xl),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "Lights unavailable",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = GvColors.Text,
+                    textAlign = TextAlign.Center,
+                )
+                // The wording comes from gv-api, so it only has to change in one place.
+                Text(
+                    state.error.orEmpty(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GvColors.TextMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = spacing.md),
+                )
+                OutlinedButton(onClick = vm::retry) { Text("Try again") }
+            }
+
             state.lights.isEmpty() -> Box(
                 modifier = Modifier
                     .fillMaxSize()

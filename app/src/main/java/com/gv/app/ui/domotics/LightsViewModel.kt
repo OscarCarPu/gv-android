@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gv.app.container
 import com.gv.app.data.repository.ApiResult
+import com.gv.app.data.repository.isUnavailableOnFailover
 import com.gv.app.data.repository.LightsRepository
 import com.gv.app.domain.model.LightState
 import kotlinx.coroutines.Job
@@ -23,6 +24,8 @@ data class LightsUiState(
     /** Only true for the very first load, so a refresh never blanks the list. */
     val initialLoading: Boolean = true,
     val error: String? = null,
+    /** gv-api runs on the backup server: no Bluetooth there, so nothing here can work. */
+    val unavailableOnFailover: Boolean = false,
 )
 
 /**
@@ -89,10 +92,16 @@ class LightsViewModel(app: Application) : AndroidViewModel(app) {
                     error = null,
                 )
 
-                is ApiResult.Failure -> _state.value = _state.value.copy(
-                    initialLoading = false,
-                    error = r.message,
-                )
+                is ApiResult.Failure -> {
+                    val failover = r.isUnavailableOnFailover
+                    _state.value = _state.value.copy(
+                        initialLoading = false,
+                        error = r.message,
+                        unavailableOnFailover = failover,
+                    )
+                    // Nothing to poll for until the user retries by hand.
+                    if (failover) pollJob?.cancel()
+                }
             }
         }
     }
@@ -142,12 +151,26 @@ class LightsViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
 
-                is ApiResult.Failure -> {
-                    _toast.emit(r.message)
-                    refresh()
-                }
+                is ApiResult.Failure -> onCommandFailure(r)
             }
         }
+    }
+
+    private suspend fun onCommandFailure(r: ApiResult.Failure) {
+        if (r.isUnavailableOnFailover) {
+            _state.value = _state.value.copy(error = r.message, unavailableOnFailover = true)
+            pollJob?.cancel()
+            return
+        }
+        _toast.emit(r.message)
+        refresh()
+    }
+
+    /** Retry after the backend came back from the backup server. */
+    fun retry() {
+        _state.value = _state.value.copy(unavailableOnFailover = false, error = null)
+        refresh(initial = true)
+        startPolling()
     }
 
     /**
@@ -171,10 +194,7 @@ class LightsViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
 
-                    is ApiResult.Failure -> {
-                        _toast.emit(r.message)
-                        refresh()
-                    }
+                    is ApiResult.Failure -> onCommandFailure(r)
                 }
             } finally {
                 inFlight -= slot

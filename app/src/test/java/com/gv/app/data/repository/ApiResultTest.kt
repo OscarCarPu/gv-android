@@ -40,4 +40,19 @@ class ApiResultTest {
         assertTrue(ApiResult.Success(42).isSuccess)
         assertFalse(ApiResult.Failure("nope").isSuccess)
     }
+
+    @Test
+    fun `failover code on a 503 is recognised`() {
+        val failure = ApiResult.Failure(
+            "backup server",
+            code = 503,
+            errorCode = ApiResult.CODE_UNAVAILABLE_ON_FAILOVER,
+        )
+        assertTrue(failure.isUnavailableOnFailover)
+    }
+
+    @Test
+    fun `a plain 503 is not the failover case`() {
+        assertFalse(ApiResult.Failure("down", code = 503).isUnavailableOnFailover)
+    }
 }

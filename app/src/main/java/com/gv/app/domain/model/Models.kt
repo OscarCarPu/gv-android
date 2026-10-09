@@ -16,4 +16,4 @@ data class TokenResponse(val token: String, val kind: String? = null) {
     }
 }
 
-data class ErrorResponse(val error: String)
+data class ErrorResponse(val error: String, val code: String? = null)

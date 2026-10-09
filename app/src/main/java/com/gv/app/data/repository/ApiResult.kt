@@ -19,6 +19,8 @@ sealed interface ApiResult<out T> {
         val message: String,
         val code: Int? = null,
         val offline: Boolean = false,
+        /** The API's machine-readable reason (`code` in the error body), when it sends one. */
+        val errorCode: String? = null,
     ) : ApiResult<Nothing>
 
     companion object {
@@ -30,12 +32,19 @@ sealed interface ApiResult<out T> {
         fun offline(): Failure = Failure(OFFLINE_MESSAGE, offline = true)
 
         const val OFFLINE_MESSAGE = "You're offline — connect to make changes"
+
+        /** gv-api is running on the backup server, which can't reach the home LAN. */
+        const val CODE_UNAVAILABLE_ON_FAILOVER = "unavailable_on_failover"
     }
 }
 
 /** Convenience for the common `is Success` check at call sites. */
 val ApiResult<*>.isSuccess: Boolean
     get() = this is ApiResult.Success
+
+/** The backend is on the backup server and this feature needs the home LAN. */
+val ApiResult.Failure.isUnavailableOnFailover: Boolean
+    get() = errorCode == ApiResult.CODE_UNAVAILABLE_ON_FAILOVER
 
 /** Maps a success's payload while carrying a failure through untouched. */
 inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
@@ -45,19 +54,25 @@ inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (th
 
 private val errorGson = Gson()
 
-private fun <T> Response<T>.extractError(): String {
+private fun <T> Response<T>.parseError(): ErrorResponse? {
     val raw = try {
         errorBody()?.string()
     } catch (_: Exception) {
         null
     }
-    if (!raw.isNullOrBlank()) {
-        runCatching { errorGson.fromJson(raw, ErrorResponse::class.java)?.error }
-            .getOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { return it }
-    }
-    return "Request failed (${code()})"
+    if (raw.isNullOrBlank()) return null
+    return runCatching { errorGson.fromJson(raw, ErrorResponse::class.java) }
+        .getOrNull()
+        ?.takeIf { it.error.isNotBlank() }
+}
+
+private fun <T> Response<T>.toFailure(): ApiResult.Failure {
+    val parsed = parseError()
+    return ApiResult.Failure(
+        message = parsed?.error ?: "Request failed (${code()})",
+        code = code(),
+        errorCode = parsed?.code,
+    )
 }
 
 /** Wraps a body-returning call, centralising Response unwrapping + error parsing. */
@@ -68,7 +83,7 @@ suspend fun <T : Any> safeApiCall(call: suspend () -> Response<T>): ApiResult<T>
             response.body()?.let { ApiResult.Success(it) }
                 ?: ApiResult.Failure("Empty response body", response.code())
         } else {
-            ApiResult.Failure(response.extractError(), response.code())
+            response.toFailure()
         }
     } catch (e: IOException) {
         ApiResult.Failure(e.message ?: "Network error")
@@ -83,7 +98,7 @@ suspend fun safeApiCallNoBody(call: suspend () -> Response<Unit>): ApiResult<Uni
         if (response.isSuccessful) {
             ApiResult.Success(Unit)
         } else {
-            ApiResult.Failure(response.extractError(), response.code())
+            response.toFailure()
         }
     } catch (e: IOException) {
         ApiResult.Failure(e.message ?: "Network error")
