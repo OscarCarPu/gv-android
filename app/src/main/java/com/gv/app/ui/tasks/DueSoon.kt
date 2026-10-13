@@ -69,10 +69,11 @@ fun groupTasksByUrgency(
         DueSoonGroup(tier, buckets[tier].orEmpty().sortedWith(cmp))
 
     val byActual = byDateThenPriority(::dueDateOf)
+    val recurringFirst = compareByDescending<TaskByDueDateResponse> { it.task_type == "recurring" }.then(byActual)
     val byEffective = byDateThenPriority(::effectiveDate)
     return listOf(
         bucket(DueSoonTier.OVERDUE, byActual),
-        bucket(DueSoonTier.TODAY, byActual),
+        bucket(DueSoonTier.TODAY, recurringFirst),
         bucket(DueSoonTier.WEEK, byEffective),
         bucket(DueSoonTier.LATER, byEffective),
     )
