@@ -134,6 +134,8 @@ class SpotifyAlarm : Service() {
         SpotifyAppRemote.connect(this, params, object : Connector.ConnectionListener {
             override fun onConnected(remote: SpotifyAppRemote) {
                 appRemote = remote
+                remote.connectApi.connectSwitchToLocalDevice()
+                    .setErrorCallback { Log.e(TAG, "switch to local device error", it) }
                 remote.playerApi.play(playlistUri)
                     .setErrorCallback { Log.e(TAG, "play() error", it) }
             }
@@ -192,7 +194,7 @@ class SpotifyAlarm : Service() {
         private const val TAG = "SpotifyAlarm"
         private const val CHANNEL_ID = "gv_alarm"
         private const val NOTIFICATION_ID = 2001
-        private const val START_PERCENT = 1
+        private const val START_PERCENT = 20
         private const val END_PERCENT = 70
         private const val STEP_PERCENT = 1
         private const val STEP_INTERVAL_MS = 5_000L
