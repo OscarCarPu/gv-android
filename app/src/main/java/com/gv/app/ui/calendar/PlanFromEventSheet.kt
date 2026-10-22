@@ -36,7 +36,7 @@ import java.time.ZoneId
 /**
  * "Create plan" from an event, as on the web: a plan block linked to the event, on no task, an
  * existing one, or a new one made here, at the event's times or different ones. If the times are
- * changed, the event is rescheduled to match — except an all-day event, which stays all-day.
+ * changed, the event is rescheduled to match.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +89,7 @@ fun PlanFromEventSheet(event: CalendarEvent, vm: CalendarViewModel, onDismiss: (
         ) {
             Column {
                 Text("Create plan", style = MaterialTheme.typography.titleMedium, color = GvColors.Text)
-                Text(event.summary.ifBlank { "(no title)" }, style = MaterialTheme.typography.labelMedium, color = GvColors.TextMuted)
+                Text(event.name.ifBlank { "(no title)" }, style = MaterialTheme.typography.labelMedium, color = GvColors.TextMuted)
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
@@ -123,13 +123,11 @@ fun PlanFromEventSheet(event: CalendarEvent, vm: CalendarViewModel, onDismiss: (
             if (timeError) {
                 Text("The end has to be after the start", style = MaterialTheme.typography.labelMedium, color = GvColors.Danger)
             }
-            if (!event.all_day) {
-                Text(
-                    "Changing the times reschedules the event to match.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = GvColors.TextMuted,
-                )
-            }
+            Text(
+                "Changing the times reschedules the event to match.",
+                style = MaterialTheme.typography.labelSmall,
+                color = GvColors.TextMuted,
+            )
 
             failure?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = GvColors.Danger) }
 

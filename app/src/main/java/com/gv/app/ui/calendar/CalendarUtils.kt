@@ -1,9 +1,10 @@
 package com.gv.app.ui.calendar
 
-import androidx.compose.ui.graphics.Color
 import com.gv.app.data.api.parseInstantOrNull
 import com.gv.app.domain.model.CalendarEvent
+import com.gv.app.domain.model.PlanBlockResponse
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -11,15 +12,13 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
-import kotlin.math.pow
 
 /**
- * Pure calendar logic: which range a view covers, which day an event belongs on, how overlapping
- * appointments are laid out, and how a recurrence preset maps onto a rule.
+ * Pure calendar logic: which range a view covers, which day an item belongs on, how overlapping
+ * items are laid out, and which of events and plan blocks are drawn.
  *
- * Kept out of the composables because this is where a calendar actually goes wrong — an all-day
- * event drawn on the wrong day, or a rule silently rewritten — and because it is the part worth
- * testing without an emulator.
+ * Kept out of the composables because this is where a calendar actually goes wrong, and because
+ * it is the part worth testing without an emulator.
  */
 
 enum class CalendarViewMode(val label: String) {
@@ -92,73 +91,122 @@ fun rangeTitle(mode: CalendarViewMode, anchor: LocalDate): String = when (mode) 
     }
 }
 
+// --- what is drawn -------------------------------------------------------------------------
+
+/** Which sources the views draw. */
+enum class CalendarSource(val label: String) {
+    EVENTS("Events"),
+    PLANS("Plans"),
+    BOTH("Both"),
+}
+
+enum class ItemKind { EVENT, PLAN }
+
+/** One thing on the grid: a calendar event or a plan block, with the times it occupies. */
+data class AgendaItem(
+    val key: String,
+    val kind: ItemKind,
+    val title: String,
+    val startsAt: String,
+    val endsAt: String,
+    /** The event it opens: the item itself, or the event a plan block is linked to. */
+    val event: CalendarEvent?,
+    /** An event that has a plan block linked to it. */
+    val planned: Boolean,
+)
+
+/**
+ * What the views draw for [source]. An event with a plan block linked to it is one thing, not
+ * two: with both sources on it appears once, as the plan block.
+ */
+fun buildItems(events: List<CalendarEvent>, blocks: List<PlanBlockResponse>, source: CalendarSource): List<AgendaItem> {
+    val plannedRefs = blocks.mapNotNull { it.event_ref }.toSet()
+    val showEvents = source != CalendarSource.PLANS
+    val showPlans = source != CalendarSource.EVENTS
+    val items = mutableListOf<AgendaItem>()
+
+    for (event in events) {
+        val planned = event.id.toString() in plannedRefs
+        if (!showEvents || (showPlans && planned)) continue
+        items += AgendaItem(
+            key = "event-${event.id}",
+            kind = ItemKind.EVENT,
+            title = event.name,
+            startsAt = event.start_time,
+            endsAt = event.end_time,
+            event = event,
+            planned = planned,
+        )
+    }
+    if (showPlans) {
+        val byId = events.associateBy { it.id.toString() }
+        for (block in blocks) {
+            items += AgendaItem(
+                key = "plan-${block.id}",
+                kind = ItemKind.PLAN,
+                title = block.task_name?.takeIf { it.isNotBlank() } ?: block.label,
+                startsAt = block.started_at,
+                endsAt = block.ended_at,
+                event = block.event_ref?.let { byId[it] },
+                planned = false,
+            )
+        }
+    }
+    return items
+}
+
 // --- placement -----------------------------------------------------------------------------
 
 /**
- * Whether an event shows on a given day. It does when it overlaps that day at all, so a
- * multi-day trip appears on every day it covers; the end is exclusive, matching the API.
- *
- * **An all-day event is compared as dates, never as instants.** Its instants are midnight in the
- * *calendar's* zone, and calendars disagree about which that is — Google reports some as UTC and
- * some as Europe/Madrid — so converting them into the phone's zone spreads a one-day event over
- * two local days, which reads as a duplicate. The dates the API sends are the ones Google holds
- * and the ones a person sees there.
+ * Whether an item shows on a given day. It does when it overlaps that day at all, so a multi-day
+ * item appears on every day it covers; the end is exclusive, matching the API.
  */
-fun occupiesDay(event: CalendarEvent, day: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Boolean {
-    val startDate = event.start_date
-    val endDate = event.end_date
-    if (event.all_day && startDate != null && endDate != null) {
-        val key = day.toString()
-        return key >= startDate && key < endDate
-    }
+fun occupiesDay(item: AgendaItem, day: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Boolean {
     val dayStart = day.atStartOfDay(zone).toInstant()
     val dayEnd = day.plusDays(1).atStartOfDay(zone).toInstant()
-    val start = parseInstantOrNull(event.starts_at) ?: return false
-    val end = parseInstantOrNull(event.ends_at) ?: start
-    // A zero-length event covers no interval, so it is placed by where it starts.
+    val start = parseInstantOrNull(item.startsAt) ?: return false
+    val end = parseInstantOrNull(item.endsAt) ?: start
+    // A zero-length item covers no interval, so it is placed by where it starts.
     if (end == start) return !start.isBefore(dayStart) && start.isBefore(dayEnd)
     return start.isBefore(dayEnd) && end.isAfter(dayStart)
 }
 
-fun allDayOn(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId = ZoneId.systemDefault()): List<CalendarEvent> =
-    events.filter { it.all_day && occupiesDay(it, day, zone) }
+/** The day's items, earliest first. */
+fun itemsOn(items: List<AgendaItem>, day: LocalDate, zone: ZoneId = ZoneId.systemDefault()): List<AgendaItem> =
+    items.filter { occupiesDay(it, day, zone) }
+        .sortedBy { parseInstantOrNull(it.startsAt) ?: Instant.EPOCH }
 
-fun timedOn(events: List<CalendarEvent>, day: LocalDate, zone: ZoneId = ZoneId.systemDefault()): List<CalendarEvent> =
-    events.filter { !it.all_day && occupiesDay(it, day, zone) }
-        .sortedBy { parseInstantOrNull(it.starts_at) ?: java.time.Instant.EPOCH }
-
-/** One event's box in a day column: minutes from midnight, and how many minutes tall. */
-data class EventBox(
-    val event: CalendarEvent,
+/** One item's box in a day column: minutes from midnight, and how many minutes tall. */
+data class ItemBox(
+    val item: AgendaItem,
     val topMinutes: Int,
     val heightMinutes: Int,
     val lane: Int,
 )
 
-data class DayLayout(val boxes: List<EventBox>, val lanes: Int)
+data class DayLayout(val boxes: List<ItemBox>, val lanes: Int)
 
 /**
- * Lays a day's timed events out in lanes.
+ * Lays a day's items out in lanes.
  *
- * Events are walked in start order and each takes the first lane whose previous event has already
- * finished, which is enough to stop two appointments at the same hour hiding one another without
- * the full interval-graph colouring a desktop calendar does.
+ * Items are walked in start order and each takes the first lane whose previous item has already
+ * finished, which is enough to stop two appointments at the same hour hiding one another.
  *
- * A box is clamped to the day, so a multi-day event is drawn to the column's edges rather than
- * off them, and is never shorter than [MIN_BOX_MINUTES] — a zero-length event still has to be
+ * A box is clamped to the day, so a multi-day item is drawn to the column's edges rather than
+ * off them, and is never shorter than [MIN_BOX_MINUTES] — a zero-length item still has to be
  * tappable.
  */
 fun layoutDay(
-    events: List<CalendarEvent>,
+    items: List<AgendaItem>,
     day: LocalDate,
     zone: ZoneId = ZoneId.systemDefault(),
 ): DayLayout {
     val dayStart = day.atStartOfDay(zone).toInstant()
     val dayEnd = day.plusDays(1).atStartOfDay(zone).toInstant()
     val laneEnds = mutableListOf<Long>()
-    val boxes = timedOn(events, day, zone).map { event ->
-        val rawStart = parseInstantOrNull(event.starts_at) ?: dayStart
-        val rawEnd = parseInstantOrNull(event.ends_at) ?: rawStart
+    val boxes = itemsOn(items, day, zone).map { item ->
+        val rawStart = parseInstantOrNull(item.startsAt) ?: dayStart
+        val rawEnd = parseInstantOrNull(item.endsAt) ?: rawStart
         val start = maxOf(rawStart, dayStart)
         val end = minOf(maxOf(rawEnd, start), dayEnd)
         val top = ChronoUnit.MINUTES.between(dayStart, start).toInt()
@@ -172,7 +220,7 @@ fun layoutDay(
         } else {
             laneEnds[lane] = endMs
         }
-        EventBox(event = event, topMinutes = top, heightMinutes = height, lane = lane)
+        ItemBox(item = item, topMinutes = top, heightMinutes = height, lane = lane)
     }
     return DayLayout(boxes = boxes, lanes = laneEnds.size.coerceAtLeast(1))
 }
@@ -180,7 +228,7 @@ fun layoutDay(
 /** Enough to hold a tap target at the grid's hour height. */
 const val MIN_BOX_MINUTES = 24
 
-// --- labels --------------------------------------------------------------------------------
+// --- labels and instants -------------------------------------------------------------------
 
 /** `HH:mm` in the phone's zone. */
 fun eventTimeLabel(iso: String?, zone: ZoneId = ZoneId.systemDefault()): String {
@@ -188,36 +236,9 @@ fun eventTimeLabel(iso: String?, zone: ZoneId = ZoneId.systemDefault()): String 
     return instant.atZone(zone).format(HourMinute)
 }
 
-/**
- * What an event's "when" reads as: a time range, or the day span for an all-day one.
- *
- * The all-day case reads the dates rather than the instants, for the same reason placement does.
- * The API's end is exclusive, so the last day named is the one before it — the convention
- * Google's own UI shows.
- */
-fun eventWhenLabel(event: CalendarEvent, zone: ZoneId = ZoneId.systemDefault()): String {
-    if (!event.all_day) {
-        return "${eventTimeLabel(event.starts_at, zone)} – ${eventTimeLabel(event.ends_at, zone)}"
-    }
-    val first = event.start_date?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        ?: parseInstantOrNull(event.starts_at)?.atZone(zone)?.toLocalDate()
-        ?: return "All day"
-    val lastExclusive = event.end_date?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        ?: parseInstantOrNull(event.ends_at)?.atZone(zone)?.toLocalDate()
-    val last = (lastExclusive ?: first.plusDays(1)).minusDays(1)
-    if (!last.isAfter(first)) return "All day"
-    return "All day, ${first.format(ShortDate)} – ${last.format(ShortDate)}"
-}
-
-// --- all-day date arithmetic ---------------------------------------------------------------
-
-/**
- * Shifts a `YYYY-MM-DD` key. Used for the one conversion an all-day form has to get right in
- * both directions: the API's end is exclusive and the form shows the last day covered, so a
- * one-day event is `starts_at = D`, `ends_at = D+1`.
- */
-fun addDaysToDateKey(key: String, days: Long): String =
-    runCatching { LocalDate.parse(key).plusDays(days).toString() }.getOrDefault(key)
+/** An item's "when": a time range. */
+fun whenLabel(item: AgendaItem, zone: ZoneId = ZoneId.systemDefault()): String =
+    "${eventTimeLabel(item.startsAt, zone)} – ${eventTimeLabel(item.endsAt, zone)}"
 
 private val IsoUtcSeconds: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT)
@@ -235,99 +256,3 @@ fun localToApiInstant(local: LocalDateTime, zone: ZoneId = ZoneId.systemDefault(
 /** The inverse: the API's instant as the wall clock it shows on this phone. */
 fun apiInstantToLocal(iso: String?, zone: ZoneId = ZoneId.systemDefault()): LocalDateTime? =
     parseInstantOrNull(iso)?.atZone(zone)?.toLocalDateTime()
-
-// --- recurrence ----------------------------------------------------------------------------
-
-enum class RecurrencePreset(val label: String) {
-    NONE("Does not repeat"),
-    DAILY("Daily"),
-    WEEKLY("Weekly"),
-    MONTHLY("Monthly"),
-    YEARLY("Yearly"),
-
-    /**
-     * A rule that is more than a plain frequency. Offering it as one of the presets above would
-     * silently drop the part that makes it specific, so it is shown and sent back untouched.
-     */
-    CUSTOM("Custom rule (kept as it is)"),
-}
-
-private val RRuleWeekdays =
-    mapOf(
-        DayOfWeek.MONDAY to "MO",
-        DayOfWeek.TUESDAY to "TU",
-        DayOfWeek.WEDNESDAY to "WE",
-        DayOfWeek.THURSDAY to "TH",
-        DayOfWeek.FRIDAY to "FR",
-        DayOfWeek.SATURDAY to "SA",
-        DayOfWeek.SUNDAY to "SU",
-    )
-
-/** The rule a preset means for an event starting on [start]. Empty for "does not repeat". */
-fun presetToRule(preset: RecurrencePreset, start: LocalDate): List<String> = when (preset) {
-    RecurrencePreset.DAILY -> listOf("RRULE:FREQ=DAILY")
-    RecurrencePreset.WEEKLY -> listOf("RRULE:FREQ=WEEKLY;BYDAY=${RRuleWeekdays[start.dayOfWeek]}")
-    RecurrencePreset.MONTHLY -> listOf("RRULE:FREQ=MONTHLY;BYMONTHDAY=${start.dayOfMonth}")
-    RecurrencePreset.YEARLY -> listOf("RRULE:FREQ=YEARLY")
-    RecurrencePreset.NONE, RecurrencePreset.CUSTOM -> emptyList()
-}
-
-/**
- * Which preset an existing rule corresponds to.
- *
- * A rule that also bounds itself (`UNTIL`, `COUNT`) or repeats every N (`INTERVAL`) is not one of
- * the presets, and mapping it onto one would drop that clause the next time the event is saved.
- */
-fun ruleToPreset(recurrence: List<String>?): RecurrencePreset {
-    if (recurrence.isNullOrEmpty()) return RecurrencePreset.NONE
-    val rule = recurrence.firstOrNull { it.uppercase(Locale.ROOT).startsWith("RRULE") }
-        ?: return RecurrencePreset.CUSTOM
-    val upper = rule.uppercase(Locale.ROOT)
-    if (upper.contains("UNTIL=") || upper.contains("COUNT=") || upper.contains("INTERVAL=")) {
-        return RecurrencePreset.CUSTOM
-    }
-    return when {
-        upper.contains("FREQ=DAILY") -> RecurrencePreset.DAILY
-        upper.contains("FREQ=WEEKLY") -> RecurrencePreset.WEEKLY
-        upper.contains("FREQ=MONTHLY") -> RecurrencePreset.MONTHLY
-        upper.contains("FREQ=YEARLY") -> RecurrencePreset.YEARLY
-        else -> RecurrencePreset.CUSTOM
-    }
-}
-
-// --- colour --------------------------------------------------------------------------------
-
-/**
- * A calendar's colour, as the API resolved it. Null when it is not a hex triplet, so the caller
- * falls back to a theme colour rather than painting something transparent.
- */
-fun parseHexColor(hex: String?): Color? {
-    val cleaned = hex?.trim()?.removePrefix("#") ?: return null
-    if (cleaned.length != 6) return null
-    val value = cleaned.toLongOrNull(16) ?: return null
-    return Color(0xFF000000 or value)
-}
-
-/**
- * Whether dark ink is the readable choice on a chip of this colour, by WCAG relative luminance.
- *
- * Calendar colours arrive from the API and can be anything — gv's palette, or one the user pinned
- * by hand. Hardcoding white text works until someone picks a pale colour and the title vanishes.
- */
-fun prefersDarkInk(hex: String?): Boolean {
-    val cleaned = hex?.trim()?.removePrefix("#") ?: return false
-    if (cleaned.length != 6) return false
-    fun channel(offset: Int): Double {
-        val raw = cleaned.substring(offset, offset + 2).toIntOrNull(16) ?: return 0.0
-        val v = raw / 255.0
-        return if (v <= 0.03928) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
-    }
-    val luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
-    // The threshold is where white and near-black read about equally well; above it, dark wins.
-    return luminance > 0.45
-}
-
-private val ChipInkDark = Color(0xFF111827)
-
-/** The ink to write on a chip of [hex]. */
-fun chipInk(hex: String?): Color = if (prefersDarkInk(hex)) ChipInkDark else Color.White

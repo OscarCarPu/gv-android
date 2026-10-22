@@ -61,7 +61,7 @@ class PlanRepository(
 
         if (plan.moveEvent) {
             val moved = safeApiCall {
-                api.updateCalendarEvent(event.instance_id, UpdateEventRequest(starts_at = plan.startsAt, ends_at = plan.endsAt))
+                api.updateCalendarEvent(event.id, UpdateEventRequest(start_time = plan.startsAt, end_time = plan.endsAt))
             }
             if (moved is ApiResult.Failure) return moved
         }
@@ -73,7 +73,7 @@ class PlanRepository(
                     ended_at = plan.endsAt,
                     task_id = taskId,
                     label = plan.label,
-                    event_ref = event.instance_id,
+                    event_ref = event.id.toString(),
                 ),
             )
         }

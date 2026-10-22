@@ -19,10 +19,9 @@ import androidx.room.RoomDatabase
         TasksSnapshotEntity::class,
         ActiveTimerEntity::class,
         ConcelloMarkEntity::class,
-        CalendarEntity::class,
         CalendarEventEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class GvDatabase : RoomDatabase() {

@@ -42,7 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.gv.app.domain.model.CalendarEvent
 import com.gv.app.ui.theme.GvColors
 import com.gv.app.ui.theme.LocalSpacing
 import java.time.LocalDate
@@ -61,10 +60,9 @@ private val HourHeight = 56.dp
 /** How many colour dots a month cell shows before it stops adding them. */
 private const val MaxDots = 4
 
-/** The colour to paint an event with, falling back to the theme when the API's is unreadable. */
-@Composable
-private fun eventColor(event: CalendarEvent): Color =
-    parseHexColor(event.color) ?: GvColors.Primary
+/** One colour for everything on the grid. */
+@Suppress("UNUSED_PARAMETER")
+private fun itemColor(item: AgendaItem): Color = GvColors.Primary
 
 // -------------------------------------------------------------------------------------------
 // Month
@@ -83,15 +81,15 @@ fun MonthView(
     state: CalendarUiState,
     onSelectDay: (LocalDate) -> Unit,
     onOpenDay: (LocalDate) -> Unit,
-    onEventClick: (CalendarEvent) -> Unit,
+    onItemClick: (AgendaItem) -> Unit,
 ) {
     val spacing = LocalSpacing.current
     val today = remember { LocalDate.now() }
 
     // Placing an event means parsing its instants, and a month grid asks 42 times. Bucketing
     // once per (events, days) keeps a tick of the clock or a scroll from re-parsing the month.
-    val byDay = remember(state.events, state.days) {
-        state.days.associateWith { day -> state.events.filter { occupiesDay(it, day) } }
+    val byDay = remember(state.items, state.days) {
+        state.days.associateWith { day -> itemsOn(state.items, day) }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -124,7 +122,7 @@ fun MonthView(
                     week.forEach { day ->
                         MonthCell(
                             day = day,
-                            events = byDay[day].orEmpty(),
+                            items = byDay[day].orEmpty(),
                             inMonth = day.month == state.anchor.month,
                             isToday = day == today,
                             isSelected = day == state.anchor,
@@ -139,9 +137,9 @@ fun MonthView(
         Spacer(Modifier.height(spacing.md))
         DayAgenda(
             day = state.anchor,
-            events = state.events,
+            items = state.items,
             onOpenDay = onOpenDay,
-            onEventClick = onEventClick,
+            onItemClick = onItemClick,
             modifier = Modifier.weight(1f),
         )
     }
@@ -150,7 +148,7 @@ fun MonthView(
 @Composable
 private fun MonthCell(
     day: LocalDate,
-    events: List<CalendarEvent>,
+    items: List<AgendaItem>,
     inMonth: Boolean,
     isToday: Boolean,
     isSelected: Boolean,
@@ -198,15 +196,15 @@ private fun MonthCell(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            events.take(MaxDots).forEach { event ->
+            items.take(MaxDots).forEach { item ->
                 Box(
                     Modifier
                         .size(5.dp)
                         .clip(CircleShape)
-                        .background(parseHexColor(event.color) ?: GvColors.Primary),
+                        .background(itemColor(item)),
                 )
             }
-            if (events.size > MaxDots) {
+            if (items.size > MaxDots) {
                 Text(
                     text = "+",
                     style = MaterialTheme.typography.labelSmall,
@@ -221,13 +219,13 @@ private fun MonthCell(
 @Composable
 private fun DayAgenda(
     day: LocalDate,
-    events: List<CalendarEvent>,
+    items: List<AgendaItem>,
     onOpenDay: (LocalDate) -> Unit,
-    onEventClick: (CalendarEvent) -> Unit,
+    onItemClick: (AgendaItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = LocalSpacing.current
-    val ofDay = remember(events, day) { allDayOn(events, day) + timedOn(events, day) }
+    val ofDay = remember(items, day) { itemsOn(items, day) }
 
     Column(modifier.fillMaxWidth()) {
         Row(
@@ -265,8 +263,8 @@ private fun DayAgenda(
                 ),
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
-                items(ofDay, key = { it.instance_id }) { event ->
-                    AgendaRow(event = event, onClick = { onEventClick(event) })
+                items(ofDay, key = { it.key }) { item ->
+                    AgendaRow(item = item, onClick = { onItemClick(item) })
                 }
             }
         }
@@ -274,9 +272,9 @@ private fun DayAgenda(
 }
 
 @Composable
-private fun AgendaRow(event: CalendarEvent, onClick: () -> Unit) {
+private fun AgendaRow(item: AgendaItem, onClick: () -> Unit) {
     val spacing = LocalSpacing.current
-    val color = eventColor(event)
+    val color = itemColor(item)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -297,7 +295,7 @@ private fun AgendaRow(event: CalendarEvent, onClick: () -> Unit) {
         )
         Column(Modifier.weight(1f)) {
             Text(
-                text = event.summary.ifBlank { "(no title)" },
+                text = item.title.ifBlank { "(no title)" },
                 style = MaterialTheme.typography.bodyLarge,
                 color = GvColors.Text,
                 maxLines = 1,
@@ -305,8 +303,8 @@ private fun AgendaRow(event: CalendarEvent, onClick: () -> Unit) {
             )
             Text(
                 text = listOfNotNull(
-                    eventWhenLabel(event),
-                    event.location.takeIf { it.isNotBlank() },
+                    whenLabel(item),
+                    if (item.kind == ItemKind.PLAN) "plan" else null,
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = GvColors.TextMuted,
@@ -314,8 +312,8 @@ private fun AgendaRow(event: CalendarEvent, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (event.recurring) {
-            Text("↻", style = MaterialTheme.typography.labelMedium, color = GvColors.Recurring)
+        if (item.planned) {
+            Text("✓", style = MaterialTheme.typography.labelMedium, color = GvColors.Success)
         }
     }
 }
@@ -333,7 +331,7 @@ private fun AgendaRow(event: CalendarEvent, onClick: () -> Unit) {
 @Composable
 fun TimeGridView(
     state: CalendarUiState,
-    onEventClick: (CalendarEvent) -> Unit,
+    onItemClick: (AgendaItem) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onOpenDay: (LocalDate) -> Unit,
 ) {
@@ -353,16 +351,14 @@ fun TimeGridView(
 
     // Same reason as the month grid: laying out a day parses every event in it, and this
     // composable re-runs whenever the now-line ticks.
-    val perDay = remember(state.events, state.days) {
-        state.days.associateWith { day ->
-            DayContents(allDay = allDayOn(state.events, day), layout = layoutDay(state.events, day))
-        }
+    val perDay = remember(state.items, state.days) {
+        state.days.associateWith { day -> layoutDay(state.items, day) }
     }
 
-    val firstHour = remember(state.events, state.days) {
+    val firstHour = remember(state.items, state.days) {
         state.days
-            .mapNotNull { day -> timedOn(state.events, day).firstOrNull() }
-            .mapNotNull { apiInstantToLocal(it.starts_at)?.hour }
+            .mapNotNull { day -> itemsOn(state.items, day).firstOrNull() }
+            .mapNotNull { apiInstantToLocal(it.startsAt)?.hour }
             .minOrNull()
             ?.let { (it - 1).coerceAtLeast(0) }
             ?: 8
@@ -374,8 +370,7 @@ fun TimeGridView(
     }
 
     Column(Modifier.fillMaxSize()) {
-        // Sticky header: weekday labels and the all-day band, which must not scroll away with
-        // the hours — an all-day event belongs to the whole column, not to a position in it.
+        // Sticky header: weekday labels, which must not scroll away with the hours.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -405,11 +400,6 @@ fun TimeGridView(
                             color = if (day == today) GvColors.Primary else GvColors.Text,
                         )
                     }
-                    AllDayBand(
-                        events = perDay[day]?.allDay.orEmpty(),
-                        compact = compact,
-                        onEventClick = onEventClick,
-                    )
                 }
             }
         }
@@ -424,9 +414,9 @@ fun TimeGridView(
             state.days.forEach { day ->
                 DayColumn(
                     day = day,
-                    layout = perDay[day]?.layout ?: DayLayout(emptyList(), 1),
+                    layout = perDay[day] ?: DayLayout(emptyList(), 1),
                     now = now.takeIf { day == today },
-                    onEventClick = onEventClick,
+                    onItemClick = onItemClick,
                     onCreateAt = onCreateAt,
                     modifier = Modifier.weight(1f),
                 )
@@ -434,9 +424,6 @@ fun TimeGridView(
         }
     }
 }
-
-/** One day column's contents, worked out once rather than on every recomposition. */
-private data class DayContents(val allDay: List<CalendarEvent>, val layout: DayLayout)
 
 private val GutterWidth = 44.dp
 
@@ -457,51 +444,11 @@ private fun HourGutter() {
 }
 
 @Composable
-private fun AllDayBand(
-    events: List<CalendarEvent>,
-    compact: Boolean,
-    onEventClick: (CalendarEvent) -> Unit,
-) {
-    if (events.isEmpty()) return
-    val spacing = LocalSpacing.current
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-    ) {
-        events.take(if (compact) 2 else 4).forEach { event ->
-            val color = eventColor(event)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(color)
-                    .clickable { onEventClick(event) }
-                    .padding(horizontal = if (compact) 1.dp else spacing.sm, vertical = 2.dp),
-            ) {
-                // In a seven-column week there is no room for a title, so the colour is the
-                // whole message: something covers this day, tap to find out what.
-                if (!compact) {
-                    Text(
-                        text = event.summary.ifBlank { "(no title)" },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = chipInk(event.color),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                } else {
-                    Spacer(Modifier.height(4.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun DayColumn(
     day: LocalDate,
     layout: DayLayout,
     now: LocalTime?,
-    onEventClick: (CalendarEvent) -> Unit,
+    onItemClick: (AgendaItem) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -549,7 +496,7 @@ private fun DayColumn(
                 box = box,
                 width = laneWidth,
                 offsetX = laneWidth * box.lane,
-                onClick = { onEventClick(box.event) },
+                onClick = { onItemClick(box.item) },
             )
         }
     }
@@ -557,13 +504,13 @@ private fun DayColumn(
 
 @Composable
 private fun EventBoxCard(
-    box: EventBox,
+    box: ItemBox,
     width: Dp,
     offsetX: Dp,
     onClick: () -> Unit,
 ) {
-    val color = eventColor(box.event)
-    val ink = chipInk(box.event.color)
+    val color = itemColor(box.item)
+    val ink = Color.White
     val top = HourHeight * (box.topMinutes / 60f)
     val height = HourHeight * (box.heightMinutes / 60f)
     Column(
@@ -573,15 +520,12 @@ private fun EventBoxCard(
             .height(height)
             .padding(horizontal = 1.dp, vertical = 0.5.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(
-                // Tentative events read as provisional rather than booked.
-                if (box.event.status == "tentative") color.copy(alpha = 0.45f) else color,
-            )
+            .background(color)
             .clickable(onClick = onClick)
             .padding(horizontal = 3.dp, vertical = 2.dp),
     ) {
         Text(
-            text = box.event.summary.ifBlank { "(no title)" },
+            text = box.item.title.ifBlank { "(no title)" },
             style = MaterialTheme.typography.labelSmall,
             color = ink,
             maxLines = 2,
@@ -591,7 +535,7 @@ private fun EventBoxCard(
         // Only worth the line when the box is tall enough to show it without clipping.
         if (box.heightMinutes >= 45) {
             Text(
-                text = eventTimeLabel(box.event.starts_at),
+                text = eventTimeLabel(box.item.startsAt),
                 style = MaterialTheme.typography.labelSmall,
                 color = ink.copy(alpha = 0.85f),
                 maxLines = 1,
