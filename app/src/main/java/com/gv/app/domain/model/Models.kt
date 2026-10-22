@@ -17,3 +17,10 @@ data class TokenResponse(val token: String, val kind: String? = null) {
 }
 
 data class ErrorResponse(val error: String, val code: String? = null)
+
+/** `GET /report`: whether gv-api holds the app after a failover. The report itself is for the web. */
+data class MergeStatus(val mode: String, val merge: String = "", val error: String? = null) {
+    companion object {
+        const val MODE_NORMAL = "normal"
+    }
+}

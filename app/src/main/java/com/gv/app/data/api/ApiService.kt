@@ -19,6 +19,7 @@ import com.gv.app.domain.model.LightCommandRequest
 import com.gv.app.domain.model.LightState
 import com.gv.app.domain.model.LightStatesResponse
 import com.gv.app.domain.model.LoginRequest
+import com.gv.app.domain.model.MergeStatus
 import com.gv.app.domain.model.Overview
 import com.gv.app.domain.model.OverviewTransaction
 import com.gv.app.domain.model.TokenResponse
@@ -73,6 +74,9 @@ interface ApiService {
 
     @GET("health")
     suspend fun health(): Response<Unit>
+
+    @GET("report")
+    suspend fun mergeStatus(): Response<MergeStatus>
 
     @POST("login")
     suspend fun login(@Body request: LoginRequest): Response<TokenResponse>

@@ -35,6 +35,9 @@ sealed interface ApiResult<out T> {
 
         /** gv-api is running on the backup server, which can't reach the home LAN. */
         const val CODE_UNAVAILABLE_ON_FAILOVER = "unavailable_on_failover"
+
+        /** gv-api is merging data back after a failover and refuses everything else meanwhile. */
+        const val CODE_MERGE_PENDING = "merge_pending"
     }
 }
 
@@ -45,6 +48,10 @@ val ApiResult<*>.isSuccess: Boolean
 /** The backend is on the backup server and this feature needs the home LAN. */
 val ApiResult.Failure.isUnavailableOnFailover: Boolean
     get() = errorCode == ApiResult.CODE_UNAVAILABLE_ON_FAILOVER
+
+/** The backend is restoring data after a failover; try again once it is done. */
+val ApiResult.Failure.isMergePending: Boolean
+    get() = errorCode == ApiResult.CODE_MERGE_PENDING
 
 /** Maps a success's payload while carrying a failure through untouched. */
 inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
@@ -68,6 +75,7 @@ private fun <T> Response<T>.parseError(): ErrorResponse? {
 
 private fun <T> Response<T>.toFailure(): ApiResult.Failure {
     val parsed = parseError()
+    if (parsed?.code == ApiResult.CODE_MERGE_PENDING) MergePending.seen()
     return ApiResult.Failure(
         message = parsed?.error ?: "Request failed (${code()})",
         code = code(),
