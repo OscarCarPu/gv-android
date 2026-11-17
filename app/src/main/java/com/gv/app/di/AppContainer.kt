@@ -9,7 +9,6 @@ import com.gv.app.data.local.ThemeStore
 import com.gv.app.data.local.TokenManager
 import com.gv.app.data.local.db.GvDatabase
 import com.gv.app.data.repository.CalendarRepository
-import com.gv.app.data.repository.HabitRepository
 import com.gv.app.data.repository.LightsRepository
 import com.gv.app.data.repository.MoneyRepository
 import com.gv.app.data.repository.OnlineGate
@@ -69,9 +68,6 @@ class AppContainer(context: Context) {
 
     // --- Repositories ---
 
-    val habitRepository: HabitRepository =
-        HabitRepository(apiService, database, database.habitDao(), onlineGate)
-
     val taskRepository: TaskRepository =
         TaskRepository(apiService, database, database.taskDao(), onlineGate)
 
@@ -104,7 +100,6 @@ class AppContainer(context: Context) {
             listOf(rutasRepository)
         } else {
             listOf(
-                habitRepository,
                 taskRepository,
                 rutasRepository,
                 calendarRepository,

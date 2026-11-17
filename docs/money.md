@@ -41,7 +41,7 @@ Grouped Income / Expenses / Transfers, each a tree that **starts collapsed**, as
 
 ## Deletes are immediate
 
-As on the web: no confirmation dialog. This is safe for accounts and categories because the API refuses to delete one that is in use, so only empty ones can go. A transaction delete *is* final, and the trash icon sits on every row — but re-entering a transaction is cheap and the account total (kept by a database trigger) corrects itself either way. Habits keep a confirmation, because deleting one takes its whole history with it.
+As on the web: no confirmation dialog. This is safe for accounts and categories because the API refuses to delete one that is in use, so only empty ones can go. A transaction delete *is* final, and the trash icon sits on every row — but re-entering a transaction is cheap and the account total (kept by a database trigger) corrects itself either way.
 
 ---
 

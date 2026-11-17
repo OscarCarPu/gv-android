@@ -43,7 +43,7 @@ Observed opacity levels (exhaustive — do not round out to extra steps):
 | Usage | Alpha(s) | Example source |
 |---|---|---|
 | Very subtle fill, hover hint | `0.04`, `0.05`, `0.08` | `tasks.css:157, 144, 163` |
-| Tag/badge background | `0.10`, `0.15`, `0.20` | `components.css:27, 286, 331`; `habits.css:36` |
+| Tag/badge background | `0.10`, `0.15`, `0.20` | `components.css:27, 286, 331` |
 | Tag/badge hover, progress track | `0.25`, `0.30` | `tasks.css:480`; `components.css:296` |
 | Border (colored) | `0.25` (via `border-current/25`), `0.30`, `0.35`, `0.40`, `0.50` | `components.css:8`; `tasks.css:144, 162, 172`; `components.css:198` |
 | Focus ring / hover border | `0.40`, `0.45`, `0.55`, `0.60` | `components.css:398`; `tasks.css:539, 166, 176` |
@@ -94,16 +94,16 @@ Each entry below lists only combinations actually used in the CSS. Pixel values 
 |---|---|---|---|---|---|
 | Page heading | 30sp | 700 | — | `displaySmall` | `app.css:44` (`.container > h1`) |
 | Form / modal title | 24sp | 700 | centered; also `tracking-widest` on login 2FA code (mono) | `headlineMedium` | `components.css:264`; `login.css:12, 35` |
-| Section / card title | 18sp | 600 | — | `titleLarge` | `tasks.css:108, 116, 506`; `habits.css:28` |
+| Section / card title | 18sp | 600 | — | `titleLarge` | `tasks.css:108, 116, 506` |
 | Nav / modal close glyph | 18sp | 700 | — | `titleLarge` (icon-only) | `components.css:32` |
 | Date-nav label | 18sp | 500 | centered | `titleMedium` | `app.css:62` |
 | Info-value numeric | 16sp | 600 | tabular | `titleSmall` | `tasks.css:375` |
 | Body / list item name | 14sp | 700 | — | `bodyLarge` (bold variant) | `tasks.css:186` |
-| Body / description | 14sp | 400 | muted color | `bodyMedium` | `tasks.css:198, 224`; `habits.css:40` |
+| Body / description | 14sp | 400 | muted color | `bodyMedium` | `tasks.css:198, 224` |
 | Button text | 14sp | 500 | — | `labelLarge` | `components.css:4` (`@utility btn`) |
 | Input text | 14sp | 400 | — | `bodyMedium` | `tasks.css:300`; `login.css:27` |
 | Nav link | 14sp | 600 | uppercase, `tracking-wide` | `labelLarge` | `components.css:20` |
-| Small label / caption / badge | 12sp | 500 | — | `labelMedium` | `components.css:8` (`@utility status-badge`); `habits.css:32, 36, 70, 77` |
+| Small label / caption / badge | 12sp | 500 | — | `labelMedium` | `components.css:8` (`@utility status-badge`) |
 | Metadata / pill-time / agenda | 12sp | 400 | tabular, mono for numeric | `labelSmall` / `bodySmall` | `tasks.css:232, 255, 552, 610` |
 | Show-more chevron | 10sp | — | — | (icon-only) | `tasks.css:136` |
 
@@ -185,9 +185,9 @@ Only four distinct radii appear in the CSS.
 |---|---|---|---|---|
 | `xs` | 3dp | (raw CSS) | Checkbox only | `tasks.css:319` |
 | `sm` | 8dp | `rounded-lg` | Buttons, inputs, list rows, toasts, pill-inputs, tag chips | `components.css:4`; `tasks.css:153`, `login.css:27` |
-| `md` | 12dp | `rounded-xl` | Cards, modals, form containers, habit card, timer panel, right-sheet | `habits.css:9`; `components.css:255`; `tasks.css:4`; `login.css:7` |
+| `md` | 12dp | `rounded-xl` | Cards, modals, form containers, timer panel, right-sheet | `components.css:255`; `tasks.css:4`; `login.css:7` |
 | `lg-top` | 16dp top-only | `rounded-t-2xl` | Bottom sheet top corners | `components.css:83` |
-| `pill` | fully rounded | `rounded-full` | Status badges, frequency badges, adjust buttons (+/-), knob, chips, progress track | `components.css:8`; `habits.css:18, 48`; `components.css:296` |
+| `pill` | fully rounded | `rounded-full` | Status badges, knob, chips, progress track | `components.css:8`; `components.css:296` |
 
 ```kotlin
 val GvShapes = Shapes(
@@ -203,14 +203,14 @@ val GvShapes = Shapes(
 
 | Use | Spec | Source |
 |---|---|---|
-| Default card/divider | 1px solid `--color-border` (6% white) | `app.css:59`; `tasks.css:5, 105, 154, 409`; `habits.css:10` |
+| Default card/divider | 1px solid `--color-border` (6% white) | `app.css:59`; `tasks.css:5, 105, 154, 409` |
 | Elevated container | 1px solid `--color-border-light` (8% white) | `components.css:84, 127, 257`; `login.css:8` |
 | Input default | 1px solid `text-muted/20` | `tasks.css:300`; `login.css:27`; `components.css:161, 195` |
 | Focus | `border-primary/50` + `ring-primary/30 ring-1` (≈ 1dp border + 1dp ring) | `components.css:198`; `tasks.css:300`; `login.css:27` |
 | Error / invalid field | `border-danger` + `ring-danger/40 ring-1` | `components.css:397` |
 | Checkbox | 2px solid `--color-text-muted` (unchecked) | `tasks.css:318` |
 | Toast left accent | 3px left border in `success` or `danger` | `components.css:414, 418` |
-| Colored tag/badge | `border border-current/25` (inherits text color at 25% alpha) | `components.css:8`; `habits.css:36`; `tasks.css:478, 491, 645` |
+| Colored tag/badge | `border border-current/25` (inherits text color at 25% alpha) | `components.css:8`; `tasks.css:478, 491, 645` |
 | Tree-child left rail | 2px solid `--color-primary` (left edge only) | `tasks.css:280` |
 
 ### Shadows / elevation
@@ -219,7 +219,6 @@ Five elevation "recipes" observed. All shadows are black-tinted except success/e
 
 | Recipe | Value | Used on | Source |
 |---|---|---|---|
-| E1 — ambient card | `0 4px 20px rgba(0,0,0,0.30)` | Habit card hover | `habits.css:14` |
 | E1 — panel | `0 4px 24px rgba(0,0,0,0.20)` | Timer panel | `tasks.css:6` |
 | E2 — toast | `0 8px 32px rgba(0,0,0,0.40)` | Toast notification | `components.css:410` |
 | E2 — notification card | `0 8px 24px rgba(0,0,0,0.30)` | In-app notification | `components.css:431` |
@@ -256,7 +255,7 @@ Three durations span all UI transitions:
 |---|---|---|
 | 150ms | default (unqualified `transition-colors`) | Most hover color swaps — `components.css:4, 20, 23, 32`; throughout |
 | 150ms | `duration-150` | Agenda entry (border+bg+scale) — `tasks.css:570` |
-| 200ms | `duration-200` | Timer-display hover, task item transitions, habit card transitions, checkbox animation hint — `tasks.css:66, 260`; `habits.css:9` |
+| 200ms | `duration-200` | Timer-display hover, task item transitions, checkbox animation hint — `tasks.css:66, 260` |
 | 300ms | `duration-300` | Progress bar fill, show-more pill — `components.css:300`; `tasks.css:128, 132` |
 
 Compose:
@@ -326,12 +325,10 @@ No explicit stroke-width is set; all glyphs inherit font weight from surrounding
 
 | Size (dp) | Tailwind | Use | Source |
 |---|---|---|---|
-| 28 × 28 | `w-7 h-7` | Habit history button | `habits.css:18` |
 | 32 × 32 | `w-8 h-8` | Frequency toggle, sheet-close, toggle-switch knob | `components.css:63, 161, 356` |
 | 36 × 36 | `w-9 h-9` | Cancel button | `components.css:45` |
-| 40 × 40 | `w-10 h-10` | Habit +/- adjust buttons | `habits.css:48` |
 
-All four are below Material's recommended 48dp minimum — when porting to touch, bump by padding the hit area rather than resizing the glyph.
+All three are below Material's recommended 48dp minimum — when porting to touch, bump by padding the hit area rather than resizing the glyph.
 
 ### Image conventions
 
@@ -349,7 +346,7 @@ Visual deltas only. `:hover` on the web → `pressed` / `focused` for touch (bot
 - **Solid button** (primary/danger/success): background → same color at `alpha 0.80` (`components.css:37, 270, 278`).
 - **Outline/muted button**: background `text-muted/15` → `text-muted/25` (`components.css:317`).
 - **Cancel button**: base `danger/15` → `danger/30` (`components.css:45`).
-- **Icon button**: color `text-muted` → `text` (or accent e.g. `primary`, `danger`) (`components.css:32, 63, 248`; `habits.css:19, 49`).
+- **Icon button**: color `text-muted` → `text` (or accent e.g. `primary`, `danger`) (`components.css:32, 63, 248`).
 - **Nav link**: text `text-muted` → `text`; bg `transparent` → `white/5` (`components.css:23`).
 - **List row neutral**: transparent border → `rgba(255,255,255,0.04)`; bg `bg` → `bg/80` (`tasks.css:156`).
 - **List row "today"**: border 35% primary → 55% primary; bg 8%-primary-over-bg → 12%-primary-over-bg (`tasks.css:161`).
@@ -378,7 +375,6 @@ Visual deltas only. `:hover` on the web → `pressed` / `focused` for touch (bot
 - **Create-mode active tab**: `bg-primary` + `text-white` (`components.css:396`).
 - **Priority filter active**: `bg-primary/15` + `text-primary` + `border-primary/40` (`tasks.css:637`).
 - **Checkbox checked**: `bg-primary` + `border-primary` + white SVG checkmark (`tasks.css:325`).
-- **Streak (current, active)**: text `warning` (`habits.css:87`).
 
 ### Pressed (touch-only — no web analog)
 

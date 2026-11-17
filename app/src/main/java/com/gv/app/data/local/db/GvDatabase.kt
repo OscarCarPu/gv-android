@@ -15,18 +15,15 @@ import androidx.room.RoomDatabase
  */
 @Database(
     entities = [
-        HabitDayEntity::class,
         TasksSnapshotEntity::class,
         ActiveTimerEntity::class,
         ConcelloMarkEntity::class,
         CalendarEventEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class GvDatabase : RoomDatabase() {
-
-    abstract fun habitDao(): HabitDao
 
     abstract fun taskDao(): TaskDao
 

@@ -5,16 +5,11 @@ import com.gv.app.domain.model.BudgetMonth
 import com.gv.app.domain.model.CalendarEvent
 import com.gv.app.domain.model.CreateEventRequest
 import com.gv.app.domain.model.SetBudgetRequest
-import com.gv.app.domain.model.CreateHabitRequest
 import com.gv.app.domain.model.UpdateEventRequest
 import com.gv.app.domain.model.Category
 import com.gv.app.domain.model.CreateAccountRequest
 import com.gv.app.domain.model.CreateCategoryRequest
 import com.gv.app.domain.model.CreateTransactionRequest
-import com.gv.app.domain.model.HabitWithLog
-import com.gv.app.domain.model.UpdateHabitRequest
-import com.gv.app.domain.model.LogHabitRequest
-import com.gv.app.domain.model.LogHabitResponse
 import com.gv.app.domain.model.LightCommandRequest
 import com.gv.app.domain.model.LightState
 import com.gv.app.domain.model.LightStatesResponse
@@ -83,22 +78,6 @@ interface ApiService {
 
     @POST("login/2fa")
     suspend fun login2fa(@Body request: TwoFactorRequest): Response<TokenResponse>
-
-    @GET("habits")
-    suspend fun getHabits(@Query("date") date: String): Response<List<HabitWithLog>>
-
-    @POST("habits/log")
-    suspend fun logHabit(@Body request: LogHabitRequest): Response<LogHabitResponse>
-
-    @DELETE("habits/{id}")
-    suspend fun deleteHabit(@Path("id") id: Int): Response<Unit>
-
-    @POST("habits")
-    suspend fun createHabit(@Body request: CreateHabitRequest): Response<Unit>
-
-    /** Full replace — see [UpdateHabitRequest]. */
-    @PUT("habits/{id}")
-    suspend fun updateHabit(@Path("id") id: Int, @Body request: UpdateHabitRequest): Response<Unit>
 
     @GET("finance/overview")
     suspend fun getFinanceOverview(): Response<Overview>

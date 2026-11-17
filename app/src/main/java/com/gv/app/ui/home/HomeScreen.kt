@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Lightbulb
@@ -42,7 +41,6 @@ import com.gv.app.ui.calendar.CalendarScreen
 import com.gv.app.ui.common.SettingsViewModel
 import com.gv.app.ui.common.SyncStatusBanner
 import com.gv.app.ui.domotics.LightsScreen
-import com.gv.app.ui.habits.HabitsScreen
 import com.gv.app.ui.money.MoneyScreen
 import com.gv.app.ui.otros.OtrosScreen
 import com.gv.app.ui.rutas.RutasScreen
@@ -52,13 +50,12 @@ import com.gv.app.ui.theme.LocalSpacing
 
 /**
  * The bottom bar, in the order the web's nav reads: Tasks first (it is where the app opens),
- * then Money, Calendar and Habits, with everything secondary under Otros.
+ * then Money and Calendar, with everything secondary under Otros.
  */
 private enum class HomeTab(val label: String, val icon: ImageVector) {
     TASKS("Tasks", Icons.AutoMirrored.Outlined.List),
     FINANCE("Finance", Icons.Outlined.AccountBalanceWallet),
     CALENDAR("Calendar", Icons.Outlined.CalendarMonth),
-    HABITS("Habits", Icons.Outlined.CheckCircle),
     OTROS("Otros", Icons.Outlined.MoreHoriz),
 
     // The `semiprivate` flavour's tabs: only what the semiprivate token may reach.
@@ -70,7 +67,7 @@ private val homeTabs: List<HomeTab> =
     if (BuildConfig.SEMIPRIVATE) {
         listOf(HomeTab.LIGHTS, HomeTab.RUTAS)
     } else {
-        listOf(HomeTab.TASKS, HomeTab.FINANCE, HomeTab.CALENDAR, HomeTab.HABITS, HomeTab.OTROS)
+        listOf(HomeTab.TASKS, HomeTab.FINANCE, HomeTab.CALENDAR, HomeTab.OTROS)
     }
 
 @Composable
@@ -84,7 +81,6 @@ fun HomeScreen() {
             HomeTab.TASKS -> TasksScreen()
             HomeTab.FINANCE -> MoneyScreen()
             HomeTab.CALENDAR -> CalendarScreen()
-            HomeTab.HABITS -> HabitsScreen()
             HomeTab.OTROS -> OtrosScreen()
             HomeTab.LIGHTS -> LightsScreen()
             HomeTab.RUTAS -> RutasScreen()

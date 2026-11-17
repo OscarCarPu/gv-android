@@ -2,7 +2,7 @@
 
 Android interface for [gestor-vida](../gestor-vida) — a personal life management system.
 
-**Current state:** skeleton. Login (password + 2FA) → empty Home placeholder. Feature screens (habits, tasks, finance) have been stripped and will be rebuilt on top of this skeleton, styled per [`docs/UI_STYLE_GUIDE.md`](docs/UI_STYLE_GUIDE.md) (tokens extracted from gv-web).
+**Current state:** skeleton. Login (password + 2FA) → empty Home placeholder. Feature screens (tasks, finance) have been stripped and will be rebuilt on top of this skeleton, styled per [`docs/UI_STYLE_GUIDE.md`](docs/UI_STYLE_GUIDE.md) (tokens extracted from gv-web).
 
 ## Stack
 
